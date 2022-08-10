@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# Changes path to use repo installed version of node:
+# source ./export_node_path
+
+readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
+readonly third_party_dir="${repo_dir}/third_party"
+readonly node_dir="${third_party_dir}/nodejs"
+readonly node_in_dir="${node_dir}/bin"
+
+export PATH="$node_in_dir:$PATH"

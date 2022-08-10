@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Exit when any command fails
+set -o errexit
+
+# Exit when an undeclared variable is used
+set -o nounset
+
+# Exit when a piped command returns a non-zero exit code
+set -o pipefail
+
+# Make sure we only run one instance
+[ "${FLOCKER:-}" != "$0" ] && exec env FLOCKER="$0" flock -en "$0" "$0" "$@" || :
+
+
+readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
+readonly third_party_dir="${repo_dir}/third_party"
+
+readonly mongo_dir="${third_party_dir}/mongodb"
+readonly mongo_bin_path="${mongo_dir}/bin/mongod"
+
+readonly data_dir="${repo_dir}/data"
+readonly mongo_data="${data_dir}/mongo/data"
+readonly mongo_log="${data_dir}/mongo/log"
+
+mkdir -p "$mongo_data" "$mongo_log"
+
+$mongo_bin_path --dbpath "$mongo_data" --logpath "$mongo_log/mongod.log"
+

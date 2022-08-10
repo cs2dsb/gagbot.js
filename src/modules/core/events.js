@@ -74,15 +74,25 @@ module.exports = {
      */
     async on_guildCreate(client, guild) {
         console.log(`Joining a new guild, ${guild.name}`);
-        await client.db.guild.ensureDefaults(guild);
+        client.prefixes[guild.id] = doc.prefix
+        await client.db.guild.ensureDefaults(guild, function(err, doc) {
+                if (err) {
+                    console.error(err);
+                    return;
+                }
+
+                client.prefixes = client.prefixes ?? {};
+                client.prefixes[guild.id] = doc.prefix;
+                console.log(`  > ${guild.name}`);
+            });
     },
 
     /**
      * Log client errors
-     * 
+     *
      * @author Kay <kylrs00@gmail.com>
      * @since r20.2.0
-     * 
+     *
      * @param client
      * @param error
      */
