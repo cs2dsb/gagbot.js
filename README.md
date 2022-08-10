@@ -31,10 +31,11 @@ To get the latest stable release, check out [the releases page](https://github.c
 
 ### Installation
   1. [Create a Discord Application and get a Bot Token](https://discord.com/developers/docs/intro#bots-and-apps)
+      1. `Requires Presence Intent`, `Server Members Intent` and `Message Content Intent` under the `Bot` tab
   2. Invite the bot to your server.
       1. https://discordapi.com/permissions.html to get an invite link without OAuth2
       2. Permissions required
-          1.
+          1. Administrator
   3. Clone the repo or [grab a stable release (recommended)](https://github.com/kylrs/gagbot.js/releases)
   4. Install the bot
 
@@ -55,6 +56,36 @@ To get the latest stable release, check out [the releases page](https://github.c
   7. You can test your bot using the `ping` command in your server chat, which is included in the `core` module. By default, you can either tag the bot to summon it, or use the prefix `!`.
 
   8. [Configure GaGBot](https://github.com/kylrs/gagbot.js/wiki/Configuration)!
+
+### Deploying on Heroku
+
+  1. Register and create a new free database on https://cloud.mongodb.com
+      1. Select username & password for authentication method
+      1. Add 0.0.0.0 to the list of allowed IPs (Heroku IPs change a lot so it's hard/impossible to have a more restricted filter)
+      1. Get the connection string from Deployment|Database dashboard (click connect and select "Connect your application"). It looks like `mongodb+srv://<username>:<password>@cluster_.____.mongodb.net/?retryWrites=true&w=majority`
+  1. Register on https://www.heroku.com
+      1. Create a new app (name doesn't matter, region *probably* doesn't matter, just pick your local region)
+      1. Set environment variables
+          1. On the `Settings` tab click `Reveal Config Vars`
+          1. Create vars for `DISCORD_TOKEN` and `MONGO_DB_URI`. `DISCORD_TOKEN` comes from the https://discord.com/developers/applications under the Bot heading. `MONGO_DB_URI` is the connection string taken from https://cloud.mongodb.com earlier
+      1. Configure deployment (`Deploy` tab)
+          1. Linking to github is probably easiest
+              1. Create a github account
+              1. Fork this repository under your own account
+              1. Select `GitHub` as the deployment method in Heroku | Deploy tab
+                  1. Do the OAuth dance to give Heroku access to your GitHub account
+                  1. Select the branch you want to deploy
+                      1. `master` contains the latest code but may be broken during development
+                      1. `deploy` will only be pushed to once the code is tested so it should be safe to auto deploy from here
+                  1. Optionally select automatic deployments if you want Heroku to pick up new versions when you update the selected branch
+          1. Heroku git is another option, just follow the instructions on the Heroku | Deploy tab
+      1. Once deployment is configured, force at least one deployment
+      1. After it's deployed the `Resources` tab should be populated (may need to refresh the browser)
+          1. Click the pencil next to `web` and turn it off
+          1. Click the pencil next to `worker` and turn it on
+          1. It should sort itself out but you can also use `More`|`Restart all dynos`
+      1. `More`|`View logs` is useful if something isn't working.
+      1. The bot should appear almost immediatly in your server if you already invited it
 
 ## Built With
 
