@@ -49,17 +49,37 @@ module.exports = class PromoteMemberCommand extends Command {
         const new_rid = doc.data?.greet?.role;
         const junior_rid = doc.data?.promoteroles?.junior_role;
         const full_rid = doc.data?.promoteroles?.full_role;
-        const junior_chat_channel_id = doc.data?.promoteroles?.junior_chat_channel;
+
+        const junior_chat_channel_id = doc.data?.promoterules?.junior_chat_channel;
+        const new_chat_channel_id = doc.data?.promoterules?.new_chat_channel;
+        const new_chat_min_messages = doc.data?.promoterules?.new_chat_min_messages;
+        const junior_chat_min_messages = doc.data?.promoterules?.junior_chat_min_messages;
+        const junior_min_age = doc.data?.promoterules?.junior_min_age;
+        const new_message_max_age = doc.data?.promoterules?.new_message_max_age;
 
 
         let bail = false;
-        if (!new_rid) { message.channel.send('Greeting role (new_member) not configured.'); bail = true;}
-        if (!junior_rid) { message.channel.send('Promote role (junior_role) not configured.'); bail = true;}
-        if (!full_rid) { message.channel.send('Promote role (full_role) not configured.'); bail = true;}
-        if (!junior_chat_channel_id) { message.channel.send('Junior chat channel not configured.'); bail = true;}
+        const check_arg = (value, name, kind) => {
+            if (value === null || value === undefined) {
+                message.channel.send(`${kind} ${name} not configured`);
+                bail = true;
+            }
+        };
+
+        check_arg(new_rid, "new member", "role");
+        check_arg(junior_rid, "junior member", "role");
+        check_arg(full_rid, "full member", "role");
+        check_arg(junior_chat_channel_id, "junior chat channel", "channel");
+        check_arg(new_chat_channel_id, "new chat channel", "channel");
+        check_arg(new_chat_min_messages, "new min messages", "number");
+        check_arg(junior_chat_min_messages, "junior min messages", "number");
+        check_arg(junior_min_age, "junior min age", "channel");
+        check_arg(new_message_max_age, "new message max age", "number");
+
         if (new_rid == junior_rid) { message.channel.send('New and Junior roles are THE SAME'); bail = true;}
         if (new_rid == full_rid) { message.channel.send('New and Member roles are THE SAME'); bail = true;}
         if (junior_rid == full_rid) { message.channel.send('Junior and Member roles are THE SAME'); bail = true;}
+
         if (bail) {
             return true;
         }
@@ -107,6 +127,7 @@ module.exports = class PromoteMemberCommand extends Command {
                 const junior_role = resolve_role(junior_rid, "junior_role");
                 const full_role = resolve_role(full_rid, "full_role");
                 const junior_chat_channel = resolve_channel(junior_chat_channel_id, "junior_chat_channel");
+                const new_chat_channel = resolve_channel(new_chat_channel_id, "new_chat_channel");
 
                 if (!new_role || !junior_role || !full_role || !junior_chat_channel) {
                     console.error(`!promote => Failed to resolve roles/channels. new_role: ${new_role}, junior_role: ${junior_role}, full_role: ${full_role}, junior_chat_channel: ${junior_chat_channel}`);
@@ -122,8 +143,11 @@ module.exports = class PromoteMemberCommand extends Command {
                         const dangling_junior = [];
                         const junior_to_full = [];
 
-                        const cutoff_date = new Date();
-                        cutoff_date.setDate(cutoff_date.getDate() - 3);
+                        const junior_cutoff_date = new Date();
+                        junior_cutoff_date.setDate(junior_cutoff_date.getDate() - junior_min_age);
+
+                        const new_cutoff_date = new Date();
+                        new_cutoff_date.setDate(new_cutoff_date.getDate() - new_message_max_age);
 
                         [...members.values()]
                             .filter((member) => !member.deleted)
@@ -154,15 +178,14 @@ module.exports = class PromoteMemberCommand extends Command {
                                     new_to_junior.push(member);
                                 }
 
-                                if (is_junior && join_date < cutoff_date) {
+                                if (is_junior && join_date < junior_cutoff_date) {
                                     junior_to_full.push(member);
                                 }
                             });
 
 
-                        // Check if they have spoken in the last 3 days
-                        if (junior_to_full.length > 0) {
-                            const new_embed = new GagEmbed(`Fetching ${junior_chat_channel.name} messages to check @${junior_role.name} participation`, '', {});
+                        const fetch_messages = async (channel, role, cutoff_date) => {
+                            const new_embed = new GagEmbed(`Fetching ${channel.name} messages to check @${role.name} participation`, '', {});
                             embed.edit(new_embed);
 
                             const messages = [];
@@ -170,9 +193,14 @@ module.exports = class PromoteMemberCommand extends Command {
 
                             // 50 is just an arbitrary limit in case it keeps looking forever due to a bug
                             for (let i = 0; i < 50; i++) {
-                                const new_messages = await junior_chat_channel
+                                const new_messages = await channel
                                     .messages
                                     .fetch(options);
+
+                                if (new_messages.size == 0) {
+                                    console.log("!promote => no messages returned");
+                                    break;
+                                }
 
                                 messages.push(...new_messages.values());
                                 messages.sort((a, b) => b.createdTimestamp - a.createdTimestamp);
@@ -183,28 +211,55 @@ module.exports = class PromoteMemberCommand extends Command {
 
                                 console.log(`!promote => Fetched ${new_messages.size}. Total ${messages.length}. Oldest: ${messages[messages.length-1].createdAt}`)
 
-                                if (messages.size == 0 || last_message.createdAt <= cutoff_date) {
+                                if (last_message.createdAt <= cutoff_date) {
                                     // We've got enough messages
                                     console.log(`!promote => Cutoff reached. ${last_message.createdAt} <= ${cutoff_date}`);
                                     break;
                                 }
                             }
 
-                            for (let i = junior_to_full.length - 1; i >= 0; i--) {
-                                const member = junior_to_full[i];
+                            return messages;
+                        };
 
-                                let found = false;
-                                for (let j = messages.length - 1; j >= 0; j--) {
-                                    const m = messages[j];
+                        const count_messages = (messages, member, min) => {
+                            let found = 0;
+                            for (let j = messages.length - 1; j >= 0; j--) {
+                                const m = messages[j];
 
-                                    // console.log(`${m.author.id} == ${member.id}`);
-                                    if (m.author.id === member.id) {
-                                        found = true;
+                                // console.log(`${m.author.id} == ${member.id}`);
+                                if (m.author.id === member.id) {
+                                    found += 1;
+                                    if (found >= min) {
                                         break;
                                     }
                                 }
+                            }
 
-                                if (!found) {
+                            return found;
+                        };
+
+                        if (new_to_junior.length > 0) {
+                            // Check if they have introduced themselves
+                            const messages = await fetch_messages(new_chat_channel, new_role, new_cutoff_date);
+
+                            for (let i = new_to_junior.length - 1; i >= 0; i--) {
+                                const member = new_to_junior[i];
+
+                                if (count_messages(messages, member, new_chat_min_messages) < new_chat_min_messages) {
+                                    console.log(`!promote => ${member.displayName} hasn't spoken. Skipping promotion`);
+                                    new_to_junior.splice(i, 1);
+                                }
+                            }
+                        }
+
+                        if (junior_to_full.length > 0) {
+                            // Check if they have spoken in the last x days
+                            const messages = await fetch_messages(junior_chat_channel, junior_role, junior_cutoff_date);
+
+                            for (let i = junior_to_full.length - 1; i >= 0; i--) {
+                                const member = junior_to_full[i];
+
+                                if (count_messages(messages, member, junior_chat_min_messages) < junior_chat_min_messages) {
                                     console.log(`!promote => ${member.displayName} hasn't spoken. Skipping promotion`);
                                     junior_to_full.splice(i, 1);
                                 }
