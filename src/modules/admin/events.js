@@ -31,18 +31,28 @@ module.exports = {
      * @param {Message} message
      */
     async on_message(client, message) {
-        client.db.activityLog.findOneAndUpdate(
-            {
-                guild: message.guild.id,
-                user: message.author.id,
-            },
-            {
-                lastMessage: message.id,
+        const query = {
+            guild: message.guild.id,
+            user: message.author.id,
+        };
+        const value = {
+            $set: {
+                lastMessageID: message.id,
                 lastMessageTimestamp: message.createdTimestamp,
             },
-            { upsert: true, useFindAndModify: false }
+            $inc: {}
+        };
+        value["$inc"][`channel_message_counts.${message.channel.id}`] = 1;
+
+        // console.log(query, value);
+        client.db.activityLog.updateOne(
+            query,
+            value,
+            { upsert: true, useFindAndModify: false, new: true }
         ).catch((err) => {
             console.error(err);
-        })
+        }).then((result) => {
+            // console.log(result);
+        });
     },
 };

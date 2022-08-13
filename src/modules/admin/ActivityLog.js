@@ -15,6 +15,7 @@ const schema = new mongoose.Schema({
     user: String,
     lastMessageID: String,
     lastMessageTimestamp: Number,
+    channel_message_counts: Map
 });
 
 const model = mongoose.model('ActivityLog', schema);
