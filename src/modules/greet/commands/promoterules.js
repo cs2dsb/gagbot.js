@@ -20,7 +20,7 @@ module.exports = class PromoteRulesCommand extends Command {
      */
     constructor() {
         super("promoterules",
-            "Set the promotion rules. \nUsage `#new-member-channel-to-scan #junior-member-channel-to-scan min-new-member-messages min-junior-member-messages min-junior-member-age-in-days max-new-member-message-age-in-days`. \nNote about max-new-member-message-age-in-days - this is to stop the bot from requesting every message ever from the new member channel. Recommend setting this to a huge number for the first run then once all the old forgotten accounts are processed set it to something reasonable like 10 days.\nExample: `!promoterules #introduce-yourself #general 1 10 3 30`", "gagbot:promoterrules:set", false, [channel, channel, num, num, num, num]);
+            "Set the promotion rules. \nUsage `#new-member-channel-to-scan #junior-member-channel-to-scan min-new-member-messages min-junior-member-messages min-junior-member-age-in-days`. \nExample: `!promoterules #introduce-yourself #general 1 10 3`", "gagbot:promoterrules:set", false, [channel, channel, num, num, num]);
     }
 
     /**
@@ -49,15 +49,13 @@ module.exports = class PromoteRulesCommand extends Command {
         const new_chat_min_messages = args.get(2);
         const junior_chat_min_messages = args.get(3);
         const junior_min_age = args.get(4);
-        const new_message_max_age = args.get(5);
 
         doc.data.promoterules = {
             new_chat_channel: new_chat_channel,
             junior_chat_channel: junior_chat_channel,
             new_chat_min_messages: new_chat_min_messages,
             junior_chat_min_messages: junior_chat_min_messages,
-            junior_min_age: junior_min_age,
-            new_message_max_age: new_message_max_age
+            junior_min_age: junior_min_age
         };
         console.log(`!promoterules => doc.data.promoterules: ${ JSON.stringify(doc.data.promoterules)}`);
 
