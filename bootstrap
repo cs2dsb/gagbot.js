@@ -23,6 +23,7 @@ readonly node_bin_path="${node_dir}/bin/node"
 readonly mongo_dir="${third_party_dir}/mongodb"
 readonly mongo_dl_addr="https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2004-6.0.0.tgz"
 readonly mongo_bin_path="${mongo_dir}/bin/mongod"
+readonly mongo_sh_dl_addr="https://downloads.mongodb.com/compass/mongosh-1.5.4-linux-x64.tgz"
 
 if [[ ${SKIP_SAFETY_CHECKS:-0} -ne 1 ]]; then
     function skip_safety_checks_message() {
@@ -76,6 +77,9 @@ install_dep \
     mkdir -p ${mongo_dir}; \
     cd ${mongo_dir}; \
     wget -q -O mongojs.tgz ${mongo_dl_addr}; \
+    wget -q -O mongosh.tgz ${mongo_sh_dl_addr}; \
     tar --strip-components=1 -xf mongojs.tgz; \
+    tar --strip-components=1 -xf mongosh.tgz; \
     rm mongojs.tgz; \
+    rm mongosh.tgz; \
     "

@@ -74,7 +74,6 @@ module.exports = {
      */
     async on_guildCreate(client, guild) {
         console.log(`Joining a new guild, ${guild.name}`);
-        client.prefixes[guild.id] = doc.prefix
         await client.db.guild.ensureDefaults(guild, function(err, doc) {
                 if (err) {
                     console.error(err);

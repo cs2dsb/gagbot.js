@@ -23,6 +23,5 @@ cd "$repo_dir"
 
 # Get the discord token from .env
 source ./.env
-export MONGO_DB_URI=mongodb://127.0.0.1:27017
 
 $node_bin_path src/bot.js
