@@ -7,7 +7,7 @@
  * @version v1.0.0
  */
 
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const Command = require('../../../command/Command.js');
 const { optional, str } = require('../../../command/arguments.js');
 
@@ -69,7 +69,7 @@ module.exports = class PrefixCommand extends Command {
      * @param {Message} message
      */
     sendSummons(client, message) {
-        message.channel.send(new MessageEmbed()
+        message.channel.send({ embeds: [new EmbedBuilder()
             .setTitle('Command Prefix')
             .setDescription('You can summon me using either:')
             .addFields(
@@ -77,6 +77,6 @@ module.exports = class PrefixCommand extends Command {
                 { name: 'Mention', value: '`@' + client.user.tag + '`', inline: true}
             )
             .setColor(0xEBC634)
-            .setThumbnail('https://cdn.discordapp.com/emojis/708352151558029322.png'));
+            .setThumbnail('https://cdn.discordapp.com/emojis/708352151558029322.png')]});
     }
 };

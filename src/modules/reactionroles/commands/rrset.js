@@ -95,7 +95,7 @@ module.exports = class ReactionRoleSetCommand extends Command {
     saveRoleSet(client, message, set, successCallback) {
         return set.save((err) => {
             if (err) {
-                message.channel.send(new ErrorEmbed(client.config.errorMessage, 'Something went wrong saving the roleset.'));
+                message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, 'Something went wrong saving the roleset.')]});
                 return;
             }
 
@@ -118,7 +118,7 @@ module.exports = class ReactionRoleSetCommand extends Command {
         const set = await this.getRoleSet(client, message.guild, args.get('set'));
 
         if (set === null && args.get('cmd') !== 'add') {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset called \`${args.get('set')}\``));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset called \`${args.get('set')}\``)]});
         }
 
         switch(args.get('cmd')) {
@@ -164,19 +164,21 @@ module.exports = class ReactionRoleSetCommand extends Command {
         if (set === null) set = await this.createRoleSet(client, message.guild, setName);
 
         if (set.choices.has(react)) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `The emoji ${react} is already in the roleset \`${setName}\``));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `The emoji ${react} is already in the roleset \`${setName}\``)]});
             return true;
         }
 
-        const roleObj = message.guild.roles.cache.get(role);
+        // const roleObj = message.guild.roles.cache.get(role);
         set.choices.set(react, role);
         set.markModified('choices');
         this.saveRoleSet(client, message, set, () => {
-            message.channel.send(new GagEmbed(`\`${setName}\``, 'Added a new reaction role!')
-                .addFields(
-                    { name: 'React', value: react, inline: true },
-                    { name: 'Role', value: roleObj, inline: true },
-                ));
+            const fields = [
+                { name: 'React', value: react, inline: true },
+                { name: 'Role', value: `<@&${role}>`, inline: true },
+            ];
+            // console.log(`fields: ${JSON.stringify(fields)}`);
+            message.channel.send({ embeds: [new GagEmbed(`\`${setName}\``, 'Added a new reaction role!')
+                .addFields(fields)]});
         });
 
         return true;
@@ -198,12 +200,12 @@ module.exports = class ReactionRoleSetCommand extends Command {
 
         let react = await this.getGaGBOTEmoji(client, args.get('react'));
         if(!react) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `The string ${args.get('react')} is not a valid emoji.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `The string ${args.get('react')} is not a valid emoji.`)]});
             return true;
         }
 
         if (!set.choices.has(react)) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `The roleset \`${args.get('set')}\` doesn't contain the ${react} react.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `The roleset \`${args.get('set')}\` doesn't contain the ${react} react.`)]});
             return true;
         }
 
@@ -211,11 +213,11 @@ module.exports = class ReactionRoleSetCommand extends Command {
         set.choices.delete(react);
         set.markModified('choices');
         this.saveRoleSet(client, message, set, () => {
-            message.channel.send(new GagEmbed(`\`${args.get('set')}\``, 'Removed a reaction role!')
+            message.channel.send({ embeds: [new GagEmbed(`\`${args.get('set')}\``, 'Removed a reaction role!')
                 .addFields(
                     { name: 'React', value: react, inline: true },
                     { name: 'Role', value: oldRole.toString(), inline: true }
-                ));
+                )]});
         });
 
         return true;
@@ -237,14 +239,14 @@ module.exports = class ReactionRoleSetCommand extends Command {
 
         let react = await this.getGaGBOTEmoji(client, args.get('react'));
         if(!react) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `The string ${args.get('react')} is not a valid emoji.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `The string ${args.get('react')} is not a valid emoji.`)]});
             return true;
         }
 
         const role = args.get('role');
 
         if (!set.choices.has(react)) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `The roleset \`${args.get('set')}\` doesn't contain the ${react} react.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `The roleset \`${args.get('set')}\` doesn't contain the ${react} react.`)]});
             return true;
         }
 
@@ -254,12 +256,12 @@ module.exports = class ReactionRoleSetCommand extends Command {
         set.choices.set(react, role);
         set.markModified('choices');
         this.saveRoleSet(client, message, set, () => {
-            message.channel.send(new GagEmbed(`\`${args.get('set')}\``, 'Updated a reaction role!')
+            message.channel.send({ embeds: [new GagEmbed(`\`${args.get('set')}\``, 'Updated a reaction role!')
                 .addFields(
                     { name: 'React', value: react, inline: true },
                     { name: 'From', value: oldRole.toString(), inline: true },
                     { name: 'To', value: newRole.toString(), inline: true }
-                ));
+                )]});
         });
 
         return true;
@@ -281,7 +283,7 @@ module.exports = class ReactionRoleSetCommand extends Command {
 
         set.markModified('choices');
         this.saveRoleSet(client, message, set, () => {
-            message.channel.send(new GagEmbed(`\`${args.get('set')}\``, 'Cleared all reaction roles.'));
+            message.channel.send({ embeds: [new GagEmbed(`\`${args.get('set')}\``, 'Cleared all reaction roles.')]});
         });
 
         return true;
@@ -309,7 +311,7 @@ module.exports = class ReactionRoleSetCommand extends Command {
             });
         }
 
-        message.channel.send(new GagEmbed('`' + set.alias + '`', msg));
+        message.channel.send({ embeds: [new GagEmbed('`' + set.alias + '`', msg)]});
 
         return true;
     }
@@ -331,7 +333,7 @@ module.exports = class ReactionRoleSetCommand extends Command {
         set.markModified('choices');
         this.saveRoleSet(client, message, set, () => {
             let state = set.exclusive ? 'now' : 'no longer';
-            message.channel.send(new GagEmbed(`\`${args.get('set')}\``, `The role set is ${state} exclusive.`));
+            message.channel.send({ embeds: [new GagEmbed(`\`${args.get('set')}\``, `The role set is ${state} exclusive.`)]});
         });
 
         return true;

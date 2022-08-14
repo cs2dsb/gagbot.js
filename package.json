@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "bufferutil": "^4.0.1",
-    "discord.js": "^12.5.3",
-    "dotenv": "^8.2.0",
+    "discord.js": "^14.2.0",
+    "dotenv": "^16.0.1",
     "mongoose": "^6.5.2",
     "pastebin-js": "^1.0.5",
     "utf-8-validate": "^5.0.2"

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Exit when any command fails
+set -o errexit
+
+# Exit when an undeclared variable is used
+set -o nounset
+
+# Exit when a piped command returns a non-zero exit code
+set -o pipefail
+
+# Script to rebase master onto the deploy branch
+
+
+readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
+cd $repo_dir
+
+git checkout deploy
+git rebase master
+git push
+git checkout master

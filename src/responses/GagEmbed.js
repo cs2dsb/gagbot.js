@@ -8,16 +8,18 @@
  */
 
 
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 
-module.exports = class ErrorEmbed extends MessageEmbed {
+module.exports = class ErrorEmbed extends EmbedBuilder {
 
     constructor(title, message) {
         super();
         this.setColor(0xEBC634);
         this.setThumbnail('https://cdn.discordapp.com/emojis/708352151558029322.png');
         this.setTitle(title);
-        this.setDescription(message);
+        if (message.length > 0) {
+            this.setDescription(message);
+        }
     }
 
 };

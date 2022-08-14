@@ -7,7 +7,7 @@
  * @version v1.0.0
  */
 
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder, ChannelType } = require('discord.js');
 
 module.exports = class Logger {
 
@@ -34,22 +34,31 @@ module.exports = class Logger {
      * @param {string} type
      * @param {function(Error, Channel)} callback
      */
-    async getLogChannel(guild, type, callback) {
-        let channel = null, err = null;
-        this.client.db.logChannel.findOne({guild: guild.id, logTypes: type}, function(err, doc) {
-            if (err) callback(err, channel);
-            else {
+    getLogChannel(guild, type) {
+        if (!guild?.id) {
+            console.error(`getLogChannel called with no guild.id: ${guild}`);
+            return;
+        }
+        return this.client.db.logChannel.findOne({guild: guild.id, logTypes: type})
+            .then((doc) => {
+                if (!doc) {
+                    // No log channel
+                    return null;
+                }
+
                 if (doc) {
                     const cid = doc.channel;
                     const guildChannel = guild.channels.cache.get(cid);
-                    if (!guildChannel) err = new Error(`Error fetching LogChannel:\nNo such channel ${cid} in guild ${guild.name}#${guild.id}.`)
-                    else if (guildChannel.type !== "text") err = new Error(`Error fetching LogChannel:\nThe channel must be a text channel, but is a '${channel.type}' channel.`);
-                    else channel = guildChannel;
+                    console.log(`guildChannel: ${guildChannel}`);
+                    if (!guildChannel) {
+                        throw new Error(`Error fetching LogChannel:\nNo such channel ${cid} in guild ${guild.name}#${guild.id}.`);
+                    } else if (guildChannel.type !== ChannelType.GuildText) {
+                        throw new Error(`Error fetching LogChannel:\nThe channel must be a text channel, but is a '${channel.type}' channel.`);
+                    } else {
+                        return guildChannel;
+                    }
                 }
-
-                callback(err, channel);
-            }
-        });
+            });
     }
 
     /**
@@ -66,26 +75,25 @@ module.exports = class Logger {
      * @param {object} fields
      */
     async log(guild, type, title, message, colour, fields) {
-        return this.getLogChannel(guild, type, function(err, channel) {
-            if (err) {
-                console.error(err);
-                return;
-            }
-
-            if (channel) {
-                const embed = new MessageEmbed().setTimestamp();
-
-                if (title) embed.setTitle(title);
-                if (message) embed.setDescription(message);
-                if (colour) embed.setColor(colour);
-                if (fields) {
-                    Object.keys(fields).forEach(function(key) {
-                        embed.addField(key, fields[key], true);
-                    });
+        return this.getLogChannel(guild, type)
+            .catch((err) => {
+                if (err) {
+                    console.error(err);
                 }
-                channel.send(embed);
-            }
-        });
+            })
+            .then((channel) => {
+                if (channel) {
+                    const embed = new EmbedBuilder().setTimestamp();
+
+                    if (title) embed.setTitle(title);
+                    if (message) embed.setDescription(message);
+                    if (colour) embed.setColor(colour);
+                    if (fields) {
+                        embed.addFields(fields);
+                    }
+                    channel.send({ embeds: [ embed ]});
+                }
+            });
     }
 
 }

@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Collection, MessageEmbed } = require('discord.js');
+const { Collection, EmbedBuilder } = require('discord.js');
 const ArgumentList = require('./ArgumentList.js');
 const { checkUserCanExecuteCommand } = require('../Permissions');
 const { str } = require('./arguments.js');
@@ -101,14 +101,14 @@ module.exports = class Command {
         else if (!(await command.execute(client, message, args))) error = new Error(`Usage Error`);
 
         if (error) {
-            message.channel.send(new MessageEmbed()
+            message.channel.send({ embeds: [new EmbedBuilder()
                 .setTitle(error.message)
                 .addFields(
                     { name: 'Usage', value: '`' + prefix + command.getUsage() + '`'},
                     { name: 'Description', value: command.description },
                 )
                 .setColor(0xff0000)
-                .setThumbnail(`https://cdn.discordapp.com/emojis/708352247804854285.png`));
+                .setThumbnail(`https://cdn.discordapp.com/emojis/708352247804854285.png`)]});
         }
     }
 

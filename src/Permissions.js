@@ -56,7 +56,7 @@ async function getRolePermission(guild, roleID, node) {
  * @returns {boolean}
  */
 async function checkUserCanExecuteCommand(guild, user, command) {
-    if(guild.ownerID === user.id) return true;
+    if(guild.ownerId === user.id) return true;
 
     const guildMember = guild.member(user);
     const roles = guildMember.roles.cache.sorted((a, b) => b.position - a.position);

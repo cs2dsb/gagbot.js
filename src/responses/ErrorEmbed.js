@@ -8,9 +8,9 @@
  */
 
 
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 
-module.exports = class ErrorEmbed extends MessageEmbed {
+module.exports = class ErrorEmbed extends EmbedBuilder {
 
     constructor(title, message) {
         super();

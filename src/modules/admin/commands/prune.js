@@ -11,8 +11,9 @@
 const Command = require('../../../command/Command.js');
 const { num, i, optional, str, choice } = require('../../../command/arguments.js');
 const GagEmbed = require('../../../responses/GagEmbed.js');
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const PasteBin = require('pastebin-js');
+const ErrorEmbed = require('../../../responses/ErrorEmbed.js');
 
 module.exports = class PruneCommand extends Command {
 
@@ -23,14 +24,14 @@ module.exports = class PruneCommand extends Command {
      * @since r20.2.0
      */
     constructor() {
-        super("prune", "Kick inactive users", "gagbot:admin:prune", false,
-            {
-                'count': num,
-                'period': choice(i('days'), i('weeks'), i('months'), i('day'), i('week'), i('month')),
-                'dry': optional(i('dry')),
-                'reason': optional(str)
-            }
-        );
+        super("prune", "Kick inactive users", "gagbot:admin:prune", false);
+        //     {
+        //         'count': num,
+        //         'period': choice(i('days'), i('weeks'), i('months'), i('day'), i('week'), i('month')),
+        //         'dry': optional(i('dry')),
+        //         'reason': optional(str)
+        //     }
+        // );
     }
 
     /**
@@ -46,6 +47,11 @@ module.exports = class PruneCommand extends Command {
      * @returns {boolean}
      */
     async execute(client, message, args) {
+        await message.channel.send({ embeds: [
+            new ErrorEmbed(client.config.errorMessage,
+            'Prune command has been disabled post discord API upgrade as it has not been tested\nScream at whoever maintains the bot if you care')]});
+        return true;
+
         const count = args.get('count');
         const p = args.get('period')[0]
         const days = count * ((p === 'm') ? 30 : ((p === 'w') ? 7 : 1));
@@ -83,7 +89,7 @@ module.exports = class PruneCommand extends Command {
                             });
 
                         if (toKick.length === 0) {
-                            message.channel.send(new GagEmbed('Pruning Members.', 'There are no inactive members to kick!'));
+                            message.channel.send({ embeds: [new GagEmbed('Pruning Members.', 'There are no inactive members to kick!')]});
                             return true;
                         }
 
@@ -94,7 +100,7 @@ module.exports = class PruneCommand extends Command {
                                 api_user_password: process.env.PASTEBIN_USER_PASSWORD,
                             });
                             const paste = await pastebin.createPaste({
-                                text: kickListFull, 
+                                text: kickListFull,
                                 title: `Members to Prune (${message.author.username}#${message.author.discriminator}) ${new Date().toUTCString()}`,
                                 format: null,
                                 privacy: 1,
@@ -103,7 +109,7 @@ module.exports = class PruneCommand extends Command {
                             kickList += `**And \`${unlisted}\` more users. [View the full list here](${paste})**\n`
                         }
 
-                        const embedContent = 
+                        const embedContent =
                             `This action will kick \`${toKick.length}\` members:\n`
                             + kickList + '\n'
                             + `***React ✅ to kick these users, or 🚫 to cancel pruning.***`;
@@ -112,31 +118,31 @@ module.exports = class PruneCommand extends Command {
                             return ['🚫', '✅'].includes(reaction.emoji.name) && user.id === message.author.id;
                         };
 
-                        message.channel.send(new GagEmbed('Pruning Members', embedContent))
+                        message.channel.send({ embeds: [new GagEmbed('Pruning Members', embedContent)]})
                             .then((message) => {
                                 message.react('🚫')
                                     .then(() => message.react('✅'))
                                     .then(() => {
-                                        message.awaitReactions(filter, {max: 1, time: 300000, errors: ['time'] })
+                                        message.awaitReactions({ filter, max: 1, time: 300000, errors: ['time'] })
                                             .then((collected) => {
                                                 const reaction = collected.first();
 
                                                 if (reaction.emoji.name === '🚫') {
-                                                    message.channel.send(new MessageEmbed().setTitle('Prune cancelled.').setColor(0xfc687e));
+                                                    message.channel.send({ embeds: [new EmbedBuilder().setTitle('Prune cancelled.').setColor(0xfc687e)]});
                                                 } else {
                                                     toKick.forEach(async (member) => member.kick());
-                                                    message.channel.send(new MessageEmbed().setTitle(`Kicking \`${toKick.length}\` members.`).setColor(0x92fc68));
+                                                    message.channel.send({ embeds: [new EmbedBuilder().setTitle(`Kicking \`${toKick.length}\` members.`).setColor(0x92fc68)]});
                                                 }
                                             })
                                             .catch(() => {
-                                                const embed = new MessageEmbed(message.embeds[0]);
+                                                const embed = new EmbedBuilder(message.embeds[0]);
                                                 embed.setDescription('***Prune Cancelled***');
-                                                message.edit(embed);
+                                                message.edit({ embeds: [embed] });
                                                 message.reactions.removeAll();
                                             });
                                     });
                             });
-                        
+
                     });
             });
 

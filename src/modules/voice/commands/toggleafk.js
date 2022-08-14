@@ -11,6 +11,7 @@ const Command = require('../../../command/Command');
 const GagEmbed = require('../../../responses/GagEmbed')
 const ErrorEmbed = require('../../../responses/ErrorEmbed')
 const { id, optional, channel } = require('../../../command/arguments')
+const { ChannelType } = require('discord.js');
 
 module.exports = class AFKCommand extends Command {
 
@@ -55,13 +56,13 @@ module.exports = class AFKCommand extends Command {
 
     /**
      * Disable the AFK channel
-     * 
+     *
      * @author Kay <kylrs00@gmail.com>
      * @since r20.2.0
-     * 
+     *
      * @param {Client} client
-     * @param {Guild} guild 
-     * @param {Message} message 
+     * @param {Guild} guild
+     * @param {Message} message
      */
     disableAFK(client, guild, message) {
         const channel = guild.afkChannel;
@@ -69,26 +70,26 @@ module.exports = class AFKCommand extends Command {
         guild.setAFKChannel(null, msg)
             .then(updated => {
                 const embed = new GagEmbed('Disabled AFK Channel.', msg)
-                    .addField('Channel', `${channel}`)
+                    .addFields([{ name: 'Channel', value: `${channel}` }])
                     .setColor(0xde2137)
-                message.channel.send(embed)
+                message.channel.send({ embeds: [embed]})
             })
             .catch(err => {
                 console.error(err);
-                message.channel.send(new ErrorEmbed(client.config.errorMessage, 'Something went wrong disabling AFK.'));
+                message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, 'Something went wrong disabling AFK.')]});
             })
     }
 
     /**
      * Enable the AFK channel
-     * 
+     *
      * @author Kay <kylrs00@gmail.com>
      * @since r20.2.0
-     * 
+     *
      * @param {Client} client
-     * @param {Guild} guild 
-     * @param {Message} message 
-     * @param {ArgumentList} args 
+     * @param {Guild} guild
+     * @param {Message} message
+     * @param {ArgumentList} args
      */
     enableAFK(client, guild, message, args) {
         let channel;
@@ -100,45 +101,45 @@ module.exports = class AFKCommand extends Command {
         }
         if (channel === null) return true;
         else if (channel === undefined) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `No AFK channel found.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `No AFK channel found.`)]});
             return true;
         }
         const msg = `AFK **enabled** by ${message.author}.`;
         guild.setAFKChannel(channel, msg)
             .then(updated => {
-                message.channel.send(new GagEmbed('Enabled AFK Channel.', msg)
-                    .addField('Channel', `${channel}`)
-                    .setColor(0x49d13d))
+                message.channel.send({ embeds: [new GagEmbed('Enabled AFK Channel.', msg)
+                    .addFields([{ name: 'Channel', value: `${channel}`}])
+                    .setColor(0x49d13d)]})
             })
             .catch(err => {
                 console.error(err);
-                message.channel.send(new ErrorEmbed(client.config.errorMessage, 'Something went wrong enabling AFK.'));
+                message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, 'Something went wrong enabling AFK.')]});
             })
     }
 
     /**
      * Get the voice channel specified by ID in command args
-     * 
+     *
      * @author Kay <kylrs00@gmail.com>
      * @since r20.2.0
-     * 
+     *
      * @param {Client} client
-     * @param {Guild} guild 
-     * @param {Message} message 
-     * @param {ArgumentList} args 
-     * 
+     * @param {Guild} guild
+     * @param {Message} message
+     * @param {ArgumentList} args
+     *
      * @returns the channel with the given ID, or null if the channel is invalid
      */
     resolveChannelFromArgs(client, guild, message, args) {
         const cid = args.get('channel');
         const channels = guild.channels.cache;
         if (!channels.has(cid)) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `No such channel ${cid}.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `No such channel ${cid}.`)]});
             return null;
         }
         const channel = channels.get(cid)
-        if (channel.type !== 'voice') {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `Channel ${cid} is not a voice channel.`));
+        if (channel.type !== ChannelType.GuildVoice) {
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `Channel ${cid} is not a voice channel.`)]});
             return null;
         }
         return channel;
@@ -147,7 +148,7 @@ module.exports = class AFKCommand extends Command {
     findAFKChannel(guild, message) {
         const channels = guild.channels.cache
             .filter(channel => {
-                return channel.type === 'voice'
+                return channel.type === ChannelType.GuildVoice
                     && /afk/i.test(channel.name)
             });
         if (channels.size === 0) return null;

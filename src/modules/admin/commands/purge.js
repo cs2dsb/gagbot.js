@@ -11,7 +11,7 @@ const Command = require('../../../command/Command.js');
 const { choice, sequence, num, id, i, optional, channel, except, user } = require('../../../command/arguments.js');
 const ErrorEmbed = require('../../../responses/ErrorEmbed.js');
 const GagEmbed = require('../../../responses/GagEmbed.js');
-const { MessageEmbed } = require('discord.js');
+const { ChannelType } = require('discord.js');
 
 module.exports = class PurgeCommand extends Command {
 
@@ -54,8 +54,9 @@ module.exports = class PurgeCommand extends Command {
             }
         }
 
-        if (channel.type !== 'text') {
-            await message.channel.send(new ErrorEmbed(client.config.errorMessage, 'I can only delete messages in text channels!'));
+        if (channel.type !== ChannelType.GuildText) {
+            console.log(`channel.type: ${channel.type} (expected ChannelType.GuildText [${ChannelType.GuildText}])`);
+            await message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, 'I can only delete messages in text channels!')]});
             return true;
         }
 
@@ -80,20 +81,20 @@ module.exports = class PurgeCommand extends Command {
                     const fromUser = await message.guild.members.fetch(uid);
                     if (fromUser) messages = messages.filter((m) => m.author.id === uid);
                     else {
-                        await message.channel.send(new ErrorEmbed(
+                        await message.channel.send({ embeds: [new ErrorEmbed(
                             client.config.errorMessage,
                             `No user exists with the ID \`${uid}\``
-                        ));
+                        )]});
                     }
                 }
                 await this.bulkDelete(message.channel, channel, messages);
             })
             .catch((err) => {
                 console.error(err);
-                message.channel.send(new ErrorEmbed(
+                message.channel.send({ embeds: [new ErrorEmbed(
                     client.config.errorMessage,
                     `Failed to fetch messages :/`
-                ));
+                )]});
             });
 
         return true;
@@ -113,7 +114,7 @@ module.exports = class PurgeCommand extends Command {
             'Channel': sourceChannel.toString(),
         });
         let remaining = messages.size;
-        sourceChannel.send(embed)
+        sourceChannel.send({ embeds: [embed]})
             .then((message) => {
                 messages.forEach(async (msg) => {
                     msg.delete().then(() => {

@@ -9,7 +9,7 @@
  * @version v1.0.0
  */
 
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 
 module.exports = {
 
@@ -54,15 +54,15 @@ module.exports = {
             }
         });
 
-        const embed = new MessageEmbed()
+        const embed = new EmbedBuilder()
             .setDescription(msg)
             .setThumbnail(user.displayAvatarURL({size: 256}))
             .setTimestamp()
             .setColor(0x65e7b7)
-            .setFooter('https://github.com/kylrs/gagbot.js');
+            .setFooter({ text: 'https://github.com/kylrs/gagbot.js'});
 
         // Send the greeting
-        channel.send(embed);
+        channel.send({ embeds: [embed]});
     },
 
     /**

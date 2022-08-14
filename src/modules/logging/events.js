@@ -8,6 +8,7 @@
  */
 
 const Logger = require('./Logger.js');
+const { AuditLogEvent } = require('discord.js');
 
 module.exports = {
     /**
@@ -38,6 +39,7 @@ module.exports = {
      * @param {Message} after
      */
     async on_messageUpdate(client, before, after) {
+        console.log(`on_messageUpdate: ${before} => ${after}`);
         const user = before.author;
         if (user.bot) return;
         if (before.content !== after.content) {
@@ -48,10 +50,10 @@ module.exports = {
                 `**Before**\n\`\`\`\n${before.content}\n\`\`\`\n` +
                 `**After**\n\`\`\`\n${after.content}\n\`\`\``,
                 0x30649c,
-                {
-                    'Channel': before.channel.toString(),
-                    'Timestamp': `\`${new Date().toLocaleString()}\``,
-                },
+                [
+                    { name: 'Channel', value: before.channel.toString()},
+                    { name: 'Timestamp', value: `\`${new Date().toLocaleString()}\``},
+                ],
             );
         }
     },
@@ -66,6 +68,7 @@ module.exports = {
      * @param {Message} message
      */
     async on_messageDelete(client, message) {
+        console.log(`on_messageDelete: ${message}`);
         const user = message.author;
         await client.logger.log(
             message.guild,
@@ -73,10 +76,10 @@ module.exports = {
             `Message from \`${user.username}#${user.discriminator}\` was deleted.`,
             `\`\`\`\n${message.content}\n\`\`\`\n`,
             0x9c3730,
-            {
-              'Channel': message.channel.toString(),
-              'Timestamp': `\`${new Date().toLocaleString()}\``,
-            },
+            [
+                { name: 'Channel', value: message.channel.toString()},
+                { name: 'Timestamp', value: `\`${new Date().toLocaleString()}\``},
+            ],
         );
     },
 
@@ -96,32 +99,33 @@ module.exports = {
      * @param {VoiceState} after
      */
     async on_voiceStateUpdate(client, before, after) {
+        console.log(`on_voiceStateUpdate: ${before} => ${after}`);
         if (before.member.bot || after.member.bot) return;
 
         let msg = '';
         let colour = undefined;
-        const fields = {};
+        const fields = [];
 
         if (before.channel) {
             if (!after.channel) {
                 msg = 'Left voice chat.';
-                fields['Channel'] = before.channel.toString();
+                fields.push({ name: 'Channel', value: before.channel.toString()});
                 colour = 0xff4d64;
             } else if (before.channelID !== after.channelID) {
                 msg = 'Changed channels.';
-                fields['From'] = before.channel.toString();
-                fields['To'] = after.channel.toString();
+                fields.push({ name: 'From', value: before.channel.toString()});
+                fields.push({ name: 'To', value: after.channel.toString()});
                 colour = 0x4d8bff;
             }
         } else if (after) {
             msg = 'Joined voice chat.';
-            fields['Channel'] = after.channel.toString();
+            fields.push({ name: 'Channel', value: after.channel.toString()});
             colour = 0x4dff9d;
         }
 
         if (msg.length) {
-            fields['User'] = before.member.user.toString();
-            fields['Timestamp'] = `\`${new Date().toLocaleString()}\``;
+            fields.push({ name: 'User', value: before.member.user.toString()});
+            fields.push({ name: 'Timestamp', value: `\`${new Date().toLocaleString()}\``});
 
             await client.logger.log(
                 before.guild,
@@ -147,6 +151,7 @@ module.exports = {
      * @param {GuildMember} member
      */
     async on_guildMemberAdd(client, member) {
+        console.log(`on_guildMemberAdd: ${member}`);
         const user = member.user;
         await client.logger.log(
             member.guild,
@@ -154,7 +159,7 @@ module.exports = {
             `\`${user.username}#${user.discriminator}\` joined the server.`,
             '',
             0x009900,
-            { 'Timestamp': `\`${new Date().toLocaleString()}\`` },
+            [{ name: 'Timestamp', value: `\`${new Date().toLocaleString()}\`` }],
         );
     },
 
@@ -168,10 +173,11 @@ module.exports = {
      * @param {GuildMember} member
      */
     async on_guildMemberRemove(client, member) {
+        console.log(`on_guildMemberRemove: ${member}`);
         const user = member.user;
 
         member.guild
-            .fetchAuditLogs({type: "MEMBER_KICK"})
+            .fetchAuditLogs({type: AuditLogEvent.MemberKick})
             .then(async (logs) => {
                 const now = new Date();
                 // Find a recent kick audit, targeting the user who just left
@@ -187,10 +193,10 @@ module.exports = {
                         `\`${user.username}#${user.discriminator}\` was kicked from the server.`,
                         '',
                         0x990044,
-                        {
-                            'By': kick.executor.toString(),
-                            'Timestamp': `\`${new Date().toLocaleString()}\``
-                        },
+                        [
+                            { name: 'By', value: kick.executor.toString() },
+                            { name: 'Timestamp', value: `\`${new Date().toLocaleString()}\`` },
+                        ],
                     );
                 } else {
                     // If no kick audit was found, assume the user left of their own accord
@@ -200,7 +206,7 @@ module.exports = {
                         `\`${user.username}#${user.discriminator}\` left the server.`,
                         '',
                         0x990000,
-                        { 'Timestamp': `\`${new Date().toLocaleString()}\`` },
+                        [{ name: 'Timestamp', value: `\`${new Date().toLocaleString()}\`` }],
                     );
                 }
             })

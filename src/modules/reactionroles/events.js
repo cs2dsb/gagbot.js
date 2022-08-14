@@ -8,6 +8,7 @@
  * @since r20.2.0
  * @version v1.0.1
  */
+const { ChannelType } = require('discord.js');
 
 module.exports = {
 
@@ -29,7 +30,7 @@ module.exports = {
             for (let set of rolesets) {
                 if (set.channel && set.message) {
                     const channel = guild.channels.cache.get(set.channel);
-                    if (channel && channel.type === 'text') channel.messages.fetch(set.message);
+                    if (channel && channel.type === ChannelType.GuildText) channel.messages.fetch(set.message);
                 }
             }
 

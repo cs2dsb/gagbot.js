@@ -40,21 +40,21 @@ module.exports = class ReactionRoleUpdateCommand extends Command {
         const setName = args.get('set');
         const set = await client.db.roleset.findOne({guild: message.guild.id, alias: setName});
         if (set === null) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset named \`${setName}\`.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset named \`${setName}\`.`)]});
             return true;
         } else if (!set.message) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `This roleset is not bound a message.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `This roleset is not bound a message.`)]});
             return true;
         }
 
         client.emit('roleSetUpdate', set.id, (err) => {
             if (err) {
-                message.channel.send(new ErrorEmbed(client.config.errorMessage, err.message));
+                message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, err.message)]});
                 console.error(err);
                 return;
             }
 
-            message.channel.send(new GagEmbed(`\`${set.alias}\``, `Updated the reactions.`));
+            message.channel.send({ embeds: [new GagEmbed(`\`${set.alias}\``, `Updated the reactions.`)]});
         });
 
         return true;

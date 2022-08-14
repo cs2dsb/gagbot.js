@@ -10,7 +10,8 @@
 'use strict';
 
 const mongoose = require('mongoose');
-const { Client } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
+
 const ModuleLoader = require('./ModuleLoader.js');
 
 // Load config from .json files & environment variables
@@ -26,8 +27,29 @@ catch {
 require('dotenv').config();
 config.token = process.env.DISCORD_TOKEN;
 
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildBans,
+        GatewayIntentBits.GuildEmojisAndStickers,
+        GatewayIntentBits.GuildIntegrations,
+        GatewayIntentBits.GuildWebhooks,
+        GatewayIntentBits.GuildInvites,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildMessageTyping,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.DirectMessageReactions,
+        GatewayIntentBits.DirectMessageTyping,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildScheduledEvents
+    ],
+    partials: []
+});
 // Instantiate the bot
-const client = new Client();
 client.config = config;
 
 // Connect to MongoDB and insert models into client object

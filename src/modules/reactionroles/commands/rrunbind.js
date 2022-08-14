@@ -40,10 +40,10 @@ module.exports = class ReactionRoleUnBindCommand extends Command {
         const setName = args.get('set');
         const set = await client.db.roleset.findOne({guild: message.guild.id, alias: setName});
         if (set === null) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset named \`${setName}\`.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset named \`${setName}\`.`)]});
             return true;
         } else if (!set.message) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `This roleset is not bound a message.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `This roleset is not bound a message.`)]});
             return true;
         }
 
@@ -51,13 +51,13 @@ module.exports = class ReactionRoleUnBindCommand extends Command {
         set.message = null;
         set.save((err) => {
             if (err) {
-                message.channel.send(new ErrorEmbed(client.config.errorMessage, `Something went wrong saving the changes to the roleset.`));
+                message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `Something went wrong saving the changes to the roleset.`)]});
                 console.error(err);
                 return;
             }
 
             message.reactions.removeAll();
-            message.channel.send(new GagEmbed(`\`${set.alias}\``, `Unbound the roleset.`));
+            message.channel.send({ embeds: [new GagEmbed(`\`${set.alias}\``, `Unbound the roleset.`)]});
         });
 
         return true;

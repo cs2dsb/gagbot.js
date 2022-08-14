@@ -11,6 +11,7 @@ const Command = require('../../../command/Command.js');
 const { str, channel, id } = require('../../../command/arguments.js');
 const GagEmbed = require('../../../responses/GagEmbed.js');
 const ErrorEmbed = require('../../../responses/ErrorEmbed.js');
+const { ChannelType } = require('discord.js');
 
 module.exports = class ReactionRoleBindCommand extends Command {
 
@@ -44,30 +45,30 @@ module.exports = class ReactionRoleBindCommand extends Command {
         const setName = args.get('set');
         const set = await client.db.roleset.findOne({guild: message.guild.id, alias: setName});
         if (set === null) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset named \`${setName}\`.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I couldn't find a roleset named \`${setName}\`.`)]});
             return true;
         } else if (set.message) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `This roleset is already bound to the message \`${set.message}\`.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `This roleset is already bound to the message \`${set.message}\`.`)]});
             return true;
         }
 
         const channelID = args.get('channel');
         const channel = message.guild.channels.cache.get(channelID);
         if (!channel) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I couldn't find a channel with the ID \`${channelID}\`.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I couldn't find a channel with the ID \`${channelID}\`.`)]});
             return true;
-        } else if (channel.type !== 'text') {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I can only create react menus in text channels.`));
+        } else if (channel.type !== ChannelType.GuildText) {
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I can only create react menus in text channels.`)]});
             return true;
         }
 
         const messageID = args.get('message');
         const reactMessage = await channel.messages.fetch(messageID);
         if (reactMessage === null) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `I couldn't find a message with the ID \`${messageID}\`.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `I couldn't find a message with the ID \`${messageID}\`.`)]});
             return true;
         } else if (reactMessage.reactions.cache.size > 0) {
-            message.channel.send(new ErrorEmbed(client.config.errorMessage, `This message already has reactions. You must clear existing reactions before binding a roleset to the message.`));
+            message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `This message already has reactions. You must clear existing reactions before binding a roleset to the message.`)]});
             return true;
         }
 
@@ -75,23 +76,23 @@ module.exports = class ReactionRoleBindCommand extends Command {
         set.message = messageID;
         set.save((err) => {
             if (err) {
-                message.channel.send(new ErrorEmbed(client.config.errorMessage, `Something went wrong saving the changes to the roleset.`));
+                message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, `Something went wrong saving the changes to the roleset.`)]});
                 console.error(err);
                 return;
             }
 
             client.emit('roleSetUpdate', set._id, (err) => {
                 if (err) {
-                    message.channel.send(new ErrorEmbed(client.config.errorMessage, err.message));
+                    message.channel.send({ embeds: [new ErrorEmbed(client.config.errorMessage, err.message)]});
                     console.error(err);
                     return;
                 }
-    
-                message.channel.send(new GagEmbed(`\`${set.alias}\``, `Bound to message.`)
+
+                message.channel.send({ embeds: [new GagEmbed(`\`${set.alias}\``, `Bound to message.`)
                     .addFields(
                         { name: 'Message', value: messageID, inline: true },
                         { name: 'Channel', value: channel.toString(), inline: true }
-                    ));
+                    )]});
             });
         });
 

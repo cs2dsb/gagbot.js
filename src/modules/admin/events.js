@@ -30,7 +30,7 @@ module.exports = {
      * @param {Client} client
      * @param {Message} message
      */
-    async on_message(client, message) {
+    async on_messageCreate(client, message) {
         const query = {
             guild: message.guild.id,
             user: message.author.id,

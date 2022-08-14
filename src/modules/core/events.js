@@ -7,7 +7,7 @@
  * @version v1.6.0
  */
 
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const Command = require('../../command/Command.js');
 
 module.exports = {
@@ -44,7 +44,7 @@ module.exports = {
      * @param client
      * @param message
      */
-    async on_message(client, message) {
+    async on_messageCreate(client, message) {
         if (message.author.bot) return;
 
         const res = await Command.dispatchCommand(client, message, null);
@@ -53,13 +53,13 @@ module.exports = {
             console.error(res);
 
             // Send error in chat
-            const embed = new MessageEmbed()
+            const embed = new EmbedBuilder()
                 .setTitle(client.config.errorMessage)
                 .setColor(0xff0000)
                 .setDescription(res.message);
             const dedEmoji = message.guild.emojis.cache.find(emoji => emoji.name === 'gagded');
             if (dedEmoji) embed.setThumbnail(`https://cdn.discordapp.com/emojis/${dedEmoji.id}.png`);
-            message.channel.send(embed);
+            message.channel.send({ embeds: [ embed ]});
         }
     },
 
@@ -98,7 +98,10 @@ module.exports = {
     async on_error(client, error) {
         console.error(error)
         const guild = await client.guilds.cache.get(process.env.ROOT_GUILD_ID)
-        if (guild === null) return
+        console.error("Failed to lookup guild in on_error");
+
+        if (!guild) return;
+
         let title = 'An unhandled client error has occurred.'
         if (error.code) title += ` \`${error.code}\``
         client.logger.log(guild, 'error', title, error.message, 0xff0000)

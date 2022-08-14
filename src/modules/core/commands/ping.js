@@ -33,6 +33,7 @@ module.exports = class PingCommand extends Command {
      * @returns {boolean}
      */
     execute(client, message, args) {
+        console.log("Pong!");
         message.channel.send('Pong!');
         return true;
     }

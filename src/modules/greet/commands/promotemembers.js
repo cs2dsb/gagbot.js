@@ -9,7 +9,7 @@
 
 const Command = require('../../../command/Command.js');
 const GagEmbed = require('../../../responses/GagEmbed.js');
-const { MessageEmbed } = require('discord.js');
+const { EmbedBuilder, ChannelType } = require('discord.js');
 
 module.exports = class PromoteMemberCommand extends Command {
 
@@ -86,7 +86,7 @@ module.exports = class PromoteMemberCommand extends Command {
         const embed = new GagEmbed('Calculating promotions...', '', {});
 
         message.channel
-            .send(embed)
+            .send({ embeds: [embed]})
             .then((embed) => {
                 let cleanup_done = false;
                 const cleanup = () => {
@@ -113,7 +113,7 @@ module.exports = class PromoteMemberCommand extends Command {
                         return null;
                     }
                     const channel = guild.channels.cache.get(id);
-                    if (channel.type !== 'text') {
+                    if (channel.type !== ChannelType.GuildText) {
                         message.channel.send(`***${client.config.errorMessage}***\n Something went wrong... (${name} channel is not a text channel)`);
                         console.error(`!promote => Error resolving guild channel:\n Not a text channel (${name}).`);
                         return null;
@@ -215,6 +215,7 @@ module.exports = class PromoteMemberCommand extends Command {
                         cleanup();
 
                         const reaction_filter = (reaction, user) => {
+                            console.log(`reaction_filter: reaction: ${reaction}, user: ${user}`);
                             return ['🚫', '✅'].includes(reaction.emoji.name) && user.id === message.author.id;
                         };
 
@@ -224,11 +225,11 @@ module.exports = class PromoteMemberCommand extends Command {
                             if (list.length == 0) { return; }
                             nothing_to_do = false;
 
-                            message.channel.send(new GagEmbed(
+                            message.channel.send({ embeds: [new GagEmbed(
                                 title,
                                 `This action will effect ${list.length} members:\n`
                                 + list + '\n'
-                                + `***React ✅ to proceed, or 🚫 to cancel.***`))
+                                + `***React ✅ to proceed, or 🚫 to cancel.***`)]})
                             .then((message) => {
                                 message.react('🚫')
                                     .then(() => message.react('✅'))
@@ -237,21 +238,21 @@ module.exports = class PromoteMemberCommand extends Command {
                                             message.reactions.removeAll();
                                         };
 
-                                        message.awaitReactions(reaction_filter, {max: 1, time: 300000, errors: ['time'] })
+                                        message.awaitReactions({ reaction_filter, max: 1, time: 300000, errors: ['time'] })
                                             .then((collected) => {
                                                 const reaction = collected.first();
 
                                                 cleanup();
                                                 if (reaction.emoji.name === '🚫') {
-                                                    message.channel.send(new MessageEmbed().setTitle(title + ' CANCELLED.').setColor(0xfc687e));
+                                                    message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CANCELLED.').setColor(0xfc687e)]});
                                                 } else {
-                                                    message.channel.send(new MessageEmbed().setTitle(title + ' CONFIRMED.').setColor(0x92fc68));
+                                                    message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CONFIRMED.').setColor(0x92fc68)]});
                                                     list.forEach(async (member) => action(member));
                                                 }
                                             })
                                             .catch(() => {
                                                 cleanup();
-                                                message.channel.send(new MessageEmbed().setTitle(title + ' CANCELLED (timeout).').setColor(0xfc687e));
+                                                message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CANCELLED (timeout).').setColor(0xfc687e)]});
                                             });
                                     });
                             })
@@ -297,7 +298,7 @@ module.exports = class PromoteMemberCommand extends Command {
                         offer_action(`Swapping @${junior_role.name} role to @${full_role.name}`, junior_to_full, swap_role(junior_role, full_role));
 
                         if (nothing_to_do) {
-                            message.channel.send(new MessageEmbed().setTitle("All up-to-date, no changes required :)").setColor(0x92fc68));
+                            message.channel.send({ embeds: [new EmbedBuilder().setTitle("All up-to-date, no changes required :)").setColor(0x92fc68)]});
                             console.log("!promote => nothing to do");
                         }
                     })
