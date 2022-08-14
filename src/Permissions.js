@@ -60,8 +60,9 @@ async function checkUserCanExecuteCommand(guild, user, command) {
 
     const guildMember = guild.members.cache.get(user.id);
     const roles = guildMember.roles.cache.sorted((a, b) => b.position - a.position);
+    const keys = [...roles.keys()];
 
-    for (let key of roles.keyArray()) {
+    for (let key of keys) {
         const role = roles.get(key);
         const rid = role.id;
         const allowed = await getRolePermission(guild, rid, command.permissionNode);
