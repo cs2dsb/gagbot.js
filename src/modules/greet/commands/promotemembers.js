@@ -244,7 +244,7 @@ module.exports = class PromoteMemberCommand extends Command {
                                             return ['🚫', '✅'].includes(reaction.emoji.name) && user.id === initiating_user.id;
                                         };
 
-                                        message.awaitReactions({ filter, max: 1, time: 5*6*1000, errors: ['time'] })
+                                        message.awaitReactions({ filter, max: 1, time: 5*60*1000, errors: ['time'] })
                                             .then((collected) => {
                                                 const reaction = collected.first();
 
