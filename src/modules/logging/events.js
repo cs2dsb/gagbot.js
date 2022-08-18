@@ -39,7 +39,7 @@ module.exports = {
      * @param {Message} after
      */
     async on_messageUpdate(client, before, after) {
-        console.log(`on_messageUpdate: ${before} => ${after}`);
+        // console.log(`on_messageUpdate: ${before} => ${after}`);
         const user = before.author;
         if (user.bot) return;
         if (before.content !== after.content) {
@@ -68,7 +68,7 @@ module.exports = {
      * @param {Message} message
      */
     async on_messageDelete(client, message) {
-        console.log(`on_messageDelete: ${message}`);
+        // console.log(`on_messageDelete: ${message}`);
         const user = message.author;
         await client.logger.log(
             message.guild,
@@ -99,7 +99,7 @@ module.exports = {
      * @param {VoiceState} after
      */
     async on_voiceStateUpdate(client, before, after) {
-        console.log(`on_voiceStateUpdate: ${before} => ${after}`);
+        // console.log(`on_voiceStateUpdate: ${before} => ${after}`);
         if (before.member.bot || after.member.bot) return;
 
         let msg = '';
@@ -151,7 +151,7 @@ module.exports = {
      * @param {GuildMember} member
      */
     async on_guildMemberAdd(client, member) {
-        console.log(`on_guildMemberAdd: ${member}`);
+        // console.log(`on_guildMemberAdd: ${member}`);
         const user = member.user;
         await client.logger.log(
             member.guild,
@@ -173,7 +173,7 @@ module.exports = {
      * @param {GuildMember} member
      */
     async on_guildMemberRemove(client, member) {
-        console.log(`on_guildMemberRemove: ${member}`);
+        // console.log(`on_guildMemberRemove: ${member}`);
         const user = member.user;
 
         member.guild
