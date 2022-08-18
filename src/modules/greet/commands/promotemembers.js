@@ -36,6 +36,7 @@ module.exports = class PromoteMemberCommand extends Command {
      */
     async execute(client, message, args) {
         const guild = message.guild;
+        const initiating_user = message.author;
 
         // Get the guild doc
         const doc = await client.db.guild.findOne({id: guild.id});
@@ -91,10 +92,8 @@ module.exports = class PromoteMemberCommand extends Command {
                 let cleanup_done = false;
                 const cleanup = () => {
                     if (cleanup_done) { return; }
-
-                    embed.delete();
-
                     cleanup_done = true;
+                    embed.delete();
                 };
 
                 // Resolve the roles & channels
@@ -182,7 +181,7 @@ module.exports = class PromoteMemberCommand extends Command {
 
                         const count_messages = async (channel, role, members, min) => {
                             const new_embed = new GagEmbed(`Checking ${channel.name} message counts to assess @${role.name} participation (>= ${min})`, '', {});
-                            embed.edit(new_embed);
+                            await embed.edit({ embeds: [ new_embed ] });
 
                             for (let i = members.length - 1; i >= 0; i--) {
                                 const member = members[i];
@@ -214,22 +213,24 @@ module.exports = class PromoteMemberCommand extends Command {
 
                         cleanup();
 
-                        const reaction_filter = (reaction, user) => {
-                            console.log(`reaction_filter: reaction: ${reaction}, user: ${user}`);
-                            return ['🚫', '✅'].includes(reaction.emoji.name) && user.id === message.author.id;
-                        };
-
                         let nothing_to_do = true;
 
                         const offer_action = (title, list, action) => {
                             if (list.length == 0) { return; }
                             nothing_to_do = false;
 
-                            message.channel.send({ embeds: [new GagEmbed(
-                                title,
-                                `This action will effect ${list.length} members:\n`
+                            const desc = (footer) => {
+                                const d = `This action will effect ${list.length} members:\n`
                                 + list + '\n'
-                                + `***React ✅ to proceed, or 🚫 to cancel.***`)]})
+                                + ((footer != null && footer != undefined && footer.length > 0) ? footer : `***React ✅ to proceed, or 🚫 to cancel.***`);
+
+                                return d;
+                            };
+
+                            const confirm_embed = new GagEmbed(title, desc());
+
+                            message.channel.send({ embeds: [confirm_embed]})
+
                             .then((message) => {
                                 message.react('🚫')
                                     .then(() => message.react('✅'))
@@ -238,21 +239,32 @@ module.exports = class PromoteMemberCommand extends Command {
                                             message.reactions.removeAll();
                                         };
 
-                                        message.awaitReactions({ reaction_filter, max: 1, time: 300000, errors: ['time'] })
+                                        const filter = (reaction, user) => {
+                                            // console.log(`reaction_filter: reaction: ${reaction.emoji.name}, user: ${user}`);
+                                            return ['🚫', '✅'].includes(reaction.emoji.name) && user.id === initiating_user.id;
+                                        };
+
+                                        message.awaitReactions({ filter, max: 1, time: 5*6*1000, errors: ['time'] })
                                             .then((collected) => {
                                                 const reaction = collected.first();
 
                                                 cleanup();
-                                                if (reaction.emoji.name === '🚫') {
-                                                    message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CANCELLED.').setColor(0xfc687e)]});
-                                                } else {
-                                                    message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CONFIRMED.').setColor(0x92fc68)]});
+                                                if (reaction.emoji.name === '✅') {
+                                                    confirm_embed.setDescription(desc("Changes confirmed and applied"));
+                                                    message.edit({ embeds: [ confirm_embed ]});
+                                                    //message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CONFIRMED.').setColor(0x92fc68)]});
                                                     list.forEach(async (member) => action(member));
+                                                } else {
+                                                    confirm_embed.setDescription(desc("Changes cancelled"));
+                                                    message.edit({ embeds: [ confirm_embed ]});
+                                                    // message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CANCELLED.').setColor(0xfc687e)]});
                                                 }
                                             })
                                             .catch(() => {
                                                 cleanup();
-                                                message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CANCELLED (timeout).').setColor(0xfc687e)]});
+                                                confirm_embed.setDescription(desc("Changes cancelled (timeout)"));
+                                                message.edit({ embeds: [ confirm_embed ]});
+                                                // message.channel.send({ embeds: [new EmbedBuilder().setTitle(title + ' CANCELLED (timeout).').setColor(0xfc687e)]});
                                             });
                                     });
                             })
