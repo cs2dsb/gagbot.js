@@ -10,6 +10,7 @@
 const Command = require('../../../command/Command.js');
 const GagEmbed = require('../../../responses/GagEmbed.js');
 const { EmbedBuilder, ChannelType } = require('discord.js');
+const { user, optional } = require('../../../command/arguments.js');
 
 module.exports = class PromoteMemberCommand extends Command {
 
@@ -20,7 +21,7 @@ module.exports = class PromoteMemberCommand extends Command {
      * @since r20.2.0
      */
     constructor() {
-        super("promote", "Promote eligible members: New to junior members when they have > 2 roles set. Junior to full when they've been active on the server for > 3 days", "gagbot:greet:promotemembers", false, []);
+        super("promote", "Promote eligible members: New to junior members when they have > 2 roles set. Junior to full when they've been active on the server for > 3 days. Optionally pass a user to promote them without any checks", "gagbot:greet:promotemembers", false, [optional(user)]);
     }
 
     /**
@@ -82,7 +83,9 @@ module.exports = class PromoteMemberCommand extends Command {
         if (bail) {
             return true;
         }
-        console.log(`!promote => new_rid: ${new_rid}, junior_rid: ${junior_rid}, full_rid: ${full_rid}`);
+
+        const guilded_user = args.get(0);
+        console.log(`!promote => new_rid: ${new_rid}, junior_rid: ${junior_rid}, full_rid: ${full_rid}, guilded_user: ${guilded_user}`);
 
         const embed = new GagEmbed('Calculating promotions...', '', {});
 
@@ -153,6 +156,16 @@ module.exports = class PromoteMemberCommand extends Command {
                                 const is_junior = member.roles.cache.has(junior_rid);
                                 const is_full = member.roles.cache.has(full_rid);
 
+                                // console.log(`
+                                //     id: ${id},
+                                //     name: ${name},
+                                //     join_date: ${join_date},
+                                //     is_new: ${is_new},
+                                //     is_junior: ${is_junior},
+                                //     is_full: ${is_full},
+                                // `);
+
+
                                 let skip = false;
 
                                 if (is_full && is_junior) {
@@ -168,11 +181,11 @@ module.exports = class PromoteMemberCommand extends Command {
                                 // Don't do anything else until they are cleaned up
                                 if (skip) { return; }
 
-                                if (is_new && member.roles.cache.size > 2) {
+                                if (is_new && (member.roles.cache.size > 2 || id == guilded_user)) {
                                     new_to_junior.push(member);
                                 }
 
-                                if (is_junior && join_date < junior_cutoff_date) {
+                                if (is_junior && (join_date < junior_cutoff_date || id == guilded_user)) {
                                     junior_to_full.push(member);
                                 }
                             });
@@ -185,6 +198,7 @@ module.exports = class PromoteMemberCommand extends Command {
 
                             for (let i = members.length - 1; i >= 0; i--) {
                                 const member = members[i];
+                                if (member.id == guilded_user) { continue; }
 
                                 const query = {
                                     guild: message.guild.id,
