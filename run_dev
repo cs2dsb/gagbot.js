@@ -9,8 +9,6 @@ set -o nounset
 # Exit when a piped command returns a non-zero exit code
 set -o pipefail
 
-# Script to install the various tools required
-
 
 readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
 readonly third_party_dir="${repo_dir}/third_party"
