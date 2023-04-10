@@ -19,7 +19,7 @@ module.exports = class AddMemberCommand extends Command {
      * @since r20.2.0
      */
     constructor() {
-        super("am", "Set the greeting channel.", "gagbot:greet:addmember", false, [user]);
+        super("am", "Add a member.", "gagbot:greet:addmember", false, [user]);
     }
 
     /**
@@ -73,6 +73,35 @@ module.exports = class AddMemberCommand extends Command {
             message.channel.send(`***${client.config.errorMessage}***\n Something went wrong...`);
             console.error(`Error while adding member role:\n${err}`);
         });
+
+        const cid = doc.data.greet.welcomechannel;
+        const hello = doc.data.greet?.welcomemessage;
+        if (cid && hello) {
+            if (!guild.channels.cache.has(cid)) {
+                message.channel.send(`***${client.config.errorMessage}***\n Something went wrong... (welcome channel not found)`);
+                console.error(`Error while adding member role:\n No such channel.`);
+                return true;
+            }
+
+            const chan = guild.channels.cache.get(cid);
+
+            const msg = hello.replace(/{{([^{}]+)}}/g, function (str, match) {
+                switch(match) {
+                    case 'tag':
+                        return member.toString();
+                    case 'name':
+                        return member.name;
+                    case 'discriminator':
+                        return member.discriminator;
+                    case 'username':
+                        return member.username;
+                    default:
+                        return 'ERR';
+                }
+            });
+
+            chan.send(msg);
+        }
 
         return true;
     }
