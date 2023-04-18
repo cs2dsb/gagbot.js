@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Exit when any command fails
+set -o errexit
+
+# Exit when an undeclared variable is used
+set -o nounset
+
+# Exit when a piped command returns a non-zero exit code
+set -o pipefail
+
+readonly bin="${bin:-main}"
+
+readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
+readonly third_party_dir="${repo_dir}/third_party"
+
+readonly node_dir="${third_party_dir}/nodejs"
+readonly node_bin_path="${node_dir}/bin/node"
+
+cd "$repo_dir"
+
+source ../.prod_env
+
+export MONGO_DB_URI
+
+RUST_LOG=debug,gagbot_rs=debug,$bin=debug,serenity=debug \
+    cargo watch \
+        -i \*.sqlite\* \
+        -x "run --bin $bin"
+#RUST_LOG=debug cargo watch -x run

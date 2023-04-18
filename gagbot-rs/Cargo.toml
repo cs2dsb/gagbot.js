@@ -1,0 +1,63 @@
+[package]
+name = "gagbot-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Load .env files
+dotenv = "0.15.0"
+
+# Arg parsing
+clap = { version = "3.2.17", features = [ "derive", "env" ] }
+
+# MongoDB driver
+mongodb = "2.4.0"
+
+# Discord bot framework
+poise = "0.5.2"
+
+# Async runtime
+tokio = { version = "1.20.1", features = [ "full" ] }
+
+# Some handy utils for the runtime
+tokio-util = { version = "0.7.4", features = [ "net" ] }
+
+# Futures
+futures = "0.3.23"
+
+# Logging and tracing facade
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.16", features = [ "env-filter" ] }
+
+# Error handling for the bins
+anyhow = "1.0.62"
+
+# Date handling
+chrono = { version = "0.4.22", features = [ "serde" ] }
+
+# Initializes statics
+static_init = "1.0.3"
+
+# Random
+rand = "0.8.5"
+
+# Macro to enable async traits
+async-trait = "0.1.57"
+
+serde = { version = "1.0.159", features = [ "derive" ]}
+
+# SQLite wrapper
+rusqlite = { version = "0.28.0", features = ["bundled"] }
+
+# Migration manager for rusqlite
+# TODO: Switch to crates.io version. Also change rusqlite back to .29 when supported
+rusqlite_migration = { git = "https://github.com/cljoly/rusqlite_migration", rev = "087cd08e9425ee1ff760353a8b0d643f7092fc38", features = [ "from-directory"] }
+
+# Includes a whole dir in binary (for sqlite migrations)
+include_dir = "0.7.3"
+
+# MPMC channel
+flume = "0.10.14"
+
+# Wrapper around regex crate that makes creating lazy static regex
+lazy-regex = "2.5.0"

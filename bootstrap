@@ -21,9 +21,12 @@ readonly node_dl_addr="https://nodejs.org/dist/v${node_version}/node-v${node_ver
 readonly node_bin_path="${node_dir}/bin/node"
 
 readonly mongo_dir="${third_party_dir}/mongodb"
+readonly mongo_tools_dir="${third_party_dir}/mongodb/tools"
 readonly mongo_dl_addr="https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2004-6.0.0.tgz"
 readonly mongo_bin_path="${mongo_dir}/bin/mongod"
 readonly mongo_sh_dl_addr="https://downloads.mongodb.com/compass/mongosh-1.5.4-linux-x64.tgz"
+readonly mongo_tools_dl_addr="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian10-x86_64-100.7.0.tgz"
+readonly mongo_export_bin_path="${mongo_tools_dir}/bin/mongoexport"
 
 if [[ ${SKIP_SAFETY_CHECKS:-0} -ne 1 ]]; then
     function skip_safety_checks_message() {
@@ -82,4 +85,16 @@ install_dep \
     tar --strip-components=1 -xf mongosh.tgz; \
     rm mongojs.tgz; \
     rm mongosh.tgz; \
+    "
+
+install_dep \
+    "mongo tools" \
+    "test -s ${mongo_export_bin_path}" \
+    "\
+    rm -rf ${mongo_tools_dir}; \
+    mkdir -p ${mongo_tools_dir}; \
+    cd ${mongo_tools_dir}; \
+    wget -q -O mongotools.tgz ${mongo_tools_dl_addr}; \
+    tar --strip-components=1 -xf mongotools.tgz; \
+    rm mongotools.tgz; \
     "

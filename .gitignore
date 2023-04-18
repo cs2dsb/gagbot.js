@@ -3,5 +3,7 @@
 /data/
 /.idea/
 .env
+.prod_env
 /config.json
 /third_party/
+/prod_dump/
