@@ -47,6 +47,18 @@ pub enum ConfigKey {
     LoggingVoiceActivity,
 }
 
+impl ConfigKey {
+    pub fn logging_keys() -> &'static [Self] {
+        &[
+            ConfigKey::LoggingGeneral,
+            ConfigKey::LoggingEditsAndDeletes,
+            ConfigKey::LoggingJoiningAndLeaving,
+            ConfigKey::LoggingErrors,
+            ConfigKey::LoggingVoiceActivity,
+        ]
+    }
+}
+
 impl ToSql for ConfigKey {
     fn to_sql(&self) -> Result<ToSqlOutput, rusqlite::Error> {
         self.name().to_sql()

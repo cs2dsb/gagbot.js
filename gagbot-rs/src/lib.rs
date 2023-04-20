@@ -1,8 +1,8 @@
 use anyhow::Result;
-use config::LogChannel;
+use config::{ConfigKey, LogChannel};
 use include_dir::{include_dir, Dir};
 use lazy_regex::{regex, Captures};
-use poise::serenity_prelude::User;
+use poise::serenity_prelude::{Timestamp, User};
 use rusqlite::{Connection, OpenFlags};
 use rusqlite_migration::Migrations;
 use tokio::sync::oneshot;
@@ -33,7 +33,9 @@ pub const GAGBOT_COLOR_SUCCESS: i32 = 0x00FF00;
 pub const GAGBOT_COLOR_LOG_EDIT: i32 = 0x30649c;
 pub const GAGBOT_COLOR_LOG_DELETE: i32 = 0x9c3730;
 pub const GAGBOT_COLOR_GREET: i32 = 0x65e7b7;
-
+pub const GAGBOT_COLOR_LOG_JOIN: i32 = 0x009900;
+pub const GAGBOT_COLOR_LOG_LEAVE: i32 = 0x990044;
+ 
 /// The edit tracking functionality won't work without some cached messages
 /// 200 is the default from discord.js <https://github.com/discordjs/discord.js/blob/86e5f5a119c6d2588b988a33236d358ded357847/packages/discord.js/src/util/Options.js#L175>
 pub const CACHE_MAX_MESSAGES: usize = 200;
@@ -146,6 +148,26 @@ impl BotData {
                 guild_id,
                 user_id,
                 channel_id,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }
+
+    pub async fn set_config(
+        &self,
+        guild_id: GuildId,
+        key: ConfigKey,
+        timestamp: Timestamp,
+        value: String,
+    ) -> Result<()> {
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::SetConfigString {
+                guild_id,
+                key,
+                value,
+                timestamp,
                 respond_to: s,
             })
             .await?;

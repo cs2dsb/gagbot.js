@@ -23,5 +23,6 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         test_embed_error(),
         message_count(),
         test_greet(),
+        set_log(),
     ]
 }

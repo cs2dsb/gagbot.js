@@ -8,7 +8,8 @@ use serenity::Color;
 
 use crate::{
     ChannelId, Context, GAGBOT_COLOR_ERROR, GAGBOT_COLOR_LOG_DELETE, GAGBOT_COLOR_LOG_EDIT,
-    GAGBOT_COLOR_NORMAL, GAGBOT_COLOR_SUCCESS, GAGBOT_ICON, GAGBOT_ICON_ERROR,
+    GAGBOT_COLOR_NORMAL, GAGBOT_COLOR_SUCCESS, GAGBOT_ICON, GAGBOT_ICON_ERROR, GAGBOT_COLOR_LOG_JOIN,
+    GAGBOT_COLOR_LOG_LEAVE
 };
 
 #[derive(Clone, Copy, ChoiceParameter)]
@@ -18,6 +19,8 @@ pub enum EmbedFlavour {
     Success,
     LogEdit,
     LogDelete,
+    LogJoin,
+    LogLeave,
 }
 
 impl Into<Color> for EmbedFlavour {
@@ -28,6 +31,8 @@ impl Into<Color> for EmbedFlavour {
             EmbedFlavour::Success => GAGBOT_COLOR_SUCCESS,
             EmbedFlavour::LogEdit => GAGBOT_COLOR_LOG_EDIT,
             EmbedFlavour::LogDelete => GAGBOT_COLOR_LOG_DELETE,
+            EmbedFlavour::LogJoin => GAGBOT_COLOR_LOG_JOIN,
+            EmbedFlavour::LogLeave => GAGBOT_COLOR_LOG_LEAVE,
         }
         .into()
     }
@@ -65,6 +70,18 @@ impl Embed {
     pub fn success() -> Self {
         Self {
             flavour: Some(EmbedFlavour::Success),
+            ..Default::default()
+        }
+    }
+    pub fn join() -> Self {
+        Self {
+            flavour: Some(EmbedFlavour::LogJoin),
+            ..Default::default()
+        }
+    }
+    pub fn leave() -> Self {
+        Self {
+            flavour: Some(EmbedFlavour::LogLeave),
             ..Default::default()
         }
     }

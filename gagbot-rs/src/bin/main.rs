@@ -1,14 +1,9 @@
 // TODO:
 //
 // Events:
-// on_guildMemberAdd
-// Trigger greeting
 // on_voiceStateUpdate
 // Log when a joins, leaves, or moves to a different voice channel
-// on_guildMemberAdd
-// Log new member
-// on_guildMemberRemove
-// Log member leaving (check audit log too)
+
 // on_messageReactionAdd
 // Add role corresponding to emoji
 // on_messageReactionRemove
@@ -339,7 +334,36 @@ async fn event_handler<'a>(
         }
         GuildMemberAddition {
             new_member,
-        } => {}
+        } => {
+            let guild_id = new_member.guild_id;     
+            let user = &new_member.user;       
+
+            if let Some((channel_id, embed)) = data.get_greet(guild_id.into(), user).await? {
+                embed
+                    .send_in_channel(channel_id, &ctx.http)
+                    .await?;
+            }
+
+            if let Some(channel_id) = data.log_channel(guild_id.into(), vec![LogChannel::JoiningAndLeaving]).await? {
+                Embed::join()
+                    .description(format!(
+                        "`{}` joined the server.",
+                        user.tag()))
+                    .send_in_channel(channel_id, &ctx.http)
+                    .await?;
+            }
+        }
+        GuildMemberRemoval { guild_id, user, .. } => {
+            if let Some(channel_id) = data.log_channel((*guild_id).into(), vec![LogChannel::JoiningAndLeaving]).await? {
+                // TODO: check audit log for kick status
+                Embed::leave()
+                    .description(format!(
+                        "`{}` left the server.",
+                        user.tag()))
+                    .send_in_channel(channel_id, &ctx.http)
+                    .await?;
+            } 
+        }
         _ => {}
     }
 

@@ -1,4 +1,4 @@
-use poise;
+use poise::{self, serenity_prelude::ChannelId};
 use tokio::sync::oneshot;
 
 use crate::{config::ConfigKey, Context, DbCommand, Error};
@@ -68,6 +68,40 @@ pub async fn set_config(
         Err(e) => format!("Error setting {}: {:?}", key, e),
     })
     .await?;
+
+    Ok(())
+}
+
+#[poise::command(prefix_command, slash_command, guild_only, category = "Config")]
+/// Set all log config keys to the provided value
+pub async fn set_log(
+    ctx: Context<'_>,
+
+    #[description = "The value you want to change it to"] value: ChannelId,
+) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .expect("missing guild in 'guild_only' command");
+    let timestamp = ctx.created_at();
+
+    let mut msg = String::new();
+
+    for key in ConfigKey::logging_keys().iter() {
+        let r = ctx.data().set_config(
+            guild_id.into(),
+            *key,
+            timestamp,
+            value.to_string(),
+        ).await;
+        if msg.len() > 0 {
+            msg.push('\n');
+        }
+        msg.push_str(&match r {
+            Ok(()) => format!("{} changed", key),
+            Err(e) => format!("Error setting {}: {:?}", key, e),
+        });
+    }
+    ctx.say(msg).await?;
 
     Ok(())
 }
