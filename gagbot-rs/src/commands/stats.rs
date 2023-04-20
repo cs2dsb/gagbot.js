@@ -38,10 +38,10 @@ pub async fn message_count(
                         .map(|v| v.to_string())
                         .unwrap_or("all channels".to_string())
                 ))
-                .send(ctx)
+                .send(&ctx)
                 .await?
         }
-        Err(e) => Embed::error().description(e.to_string()).send(ctx).await?,
+        Err(e) => Embed::error().description(e.to_string()).send(&ctx).await?,
     };
 
     Ok(())

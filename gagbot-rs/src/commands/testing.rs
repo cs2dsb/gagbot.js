@@ -8,7 +8,10 @@ use crate::{Context, Embed, EmbedFlavour, Error};
 #[poise::command(prefix_command, slash_command, category = "Testing")]
 /// Ping pong
 pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("Pong! : )").await?;
+    Embed::default()
+        .description("Pong!")
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }
@@ -34,8 +37,8 @@ pub async fn test_embed(
     embed.thumbnail_url = thumbnail_url;
     embed.title = title;
     embed.description = description;
-
-    embed.send(ctx).await?;
+    
+    embed.send(&ctx).await?;
 
     Ok(())
 }
@@ -43,7 +46,9 @@ pub async fn test_embed(
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
 /// Displays a generic success message
 pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), Error> {
-    Embed::success().send(ctx).await?;
+    Embed::success()
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }
@@ -51,7 +56,9 @@ pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
 /// Displays a generic error message
 pub async fn test_embed_error(ctx: Context<'_>) -> Result<(), Error> {
-    Embed::error().send(ctx).await?;
+    Embed::error()
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }
@@ -68,9 +75,14 @@ pub async fn test_greet(
         .expect("missing guild in 'guild_only' command");
 
     if let Some((_channel_id, embed)) = ctx.data().get_greet(guild_id.into(), &user).await? {
-        embed.ephemeral(true).send(ctx).await?;
+        embed
+            .send(&ctx)
+            .await?;
     } else {
-        ctx.say("Greeting is not configured").await?;
+        Embed::default()
+            .description("Greeting is not configured")
+            .send(&ctx)
+            .await?;
     }
 
     Ok(())

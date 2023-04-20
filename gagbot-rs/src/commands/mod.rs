@@ -10,6 +10,8 @@ mod config;
 pub use config::*;
 mod stats;
 pub use stats::*;
+mod permission;
+pub use permission::*;
 
 pub fn commands() -> Vec<Command<BotData, Error>> {
     vec![
@@ -24,5 +26,9 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         message_count(),
         test_greet(),
         set_log(),
+        get_permissions(),
+        grant_permission(),
+        revoke_permission(),
+        purge_permission(),
     ]
 }

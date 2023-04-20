@@ -1,10 +1,7 @@
-use poise::serenity_prelude::Timestamp;
+use poise::serenity_prelude::{ Timestamp };
 use tokio::sync::oneshot;
 
-use crate::{
-    config::{ConfigKey, LogChannel},
-    ChannelId, GuildId, UserId,
-};
+use crate::{ChannelId, GuildId, RoleId, UserId, config::{ConfigKey, LogChannel}, permissions::{EffectivePermission, Permission}};
 
 #[derive(Debug)]
 pub enum DbCommand {
@@ -51,5 +48,29 @@ pub enum DbCommand {
         user_id: UserId,
         channel_id: ChannelId,
         respond_to: oneshot::Sender<anyhow::Result<()>>,
+    },
+    GetMemberPermissions {
+        guild_id: GuildId,
+        sorted_roles: Vec<RoleId>,
+        respond_to: oneshot::Sender<anyhow::Result<Vec<EffectivePermission>>>,
+    },
+    GrantPermission {
+        guild_id: GuildId,
+        role_id: RoleId,
+        permission: Permission,
+        timestamp: Timestamp,
+        respond_to: oneshot::Sender<anyhow::Result<bool>>,
+    },
+    RevokePermission {
+        guild_id: GuildId,
+        role_id: RoleId,
+        permission: Permission,
+        timestamp: Timestamp,
+        respond_to: oneshot::Sender<anyhow::Result<bool>>,
+    },
+    PurgePermissions {
+        guild_id: GuildId,
+        timestamp: Timestamp,
+        respond_to: oneshot::Sender<anyhow::Result<bool>>,
     },
 }

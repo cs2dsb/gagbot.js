@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use poise::{
-    serenity_prelude::{self as serenity, Http, Message},
+    serenity_prelude::{self as serenity, Http, Message, CreateEmbed},
     ChoiceParameter, ReplyHandle,
 };
 use serenity::Color;
@@ -12,7 +12,7 @@ use crate::{
     GAGBOT_COLOR_LOG_LEAVE
 };
 
-#[derive(Clone, Copy, ChoiceParameter)]
+#[derive(Clone, Copy, ChoiceParameter, PartialEq)]
 pub enum EmbedFlavour {
     Normal,
     Error,
@@ -93,6 +93,14 @@ impl Embed {
         self.flavour = Some(flavour);
         self
     }
+    pub fn set_error(mut self, is_error: bool) -> Self {
+        if is_error {
+            self.flavour = Some(EmbedFlavour::Error);
+        } else if self.flavour == Some(EmbedFlavour::Error) {
+            self.flavour = None;
+        }
+        self
+    }
     pub fn thumbnail_url<T: ToString>(mut self, thumbnail_url: T) -> Self {
         self.thumbnail_url = Some(thumbnail_url.to_string());
         self
@@ -113,39 +121,13 @@ impl Embed {
         self.ephemeral = Some(ephemeral);
         self
     }
-    pub async fn send<'a>(self, ctx: Context<'a>) -> Result<ReplyHandle<'a>, serenity::Error> {
-        let Self {
-            color,
-            flavour,
-            thumbnail_url,
-            title,
-            description,
-            footer,
-            ephemeral,
-        } = self;
+    pub async fn send<'a>(self, ctx: &Context<'a>) -> Result<ReplyHandle<'a>, serenity::Error> {
+        let ephemeral = self.ephemeral.unwrap_or(true);
 
-        let flavour = flavour.unwrap_or(EmbedFlavour::Normal);
-        let color = color.unwrap_or(flavour.into());
-        let thumbnail_url = thumbnail_url.unwrap_or(flavour.thumbnail_url().to_string());
-        let ephemeral = ephemeral.unwrap_or(true);
-
-        ctx.send(|b| {
-            b.embed(|mut b| {
-                b = b.color(color).thumbnail(thumbnail_url);
-
-                if let Some(title) = title {
-                    b = b.title(title);
-                }
-                if let Some(description) = description {
-                    b = b.description(description);
-                }
-                if let Some(footer) = footer {
-                    b = b.footer(|b| b.text(footer));
-                }
-                b
-            })
+        ctx.send(|b| b
+            .embed(|b| self.create_embed(b))
             .ephemeral(ephemeral)
-        })
+        )
         .await
     }
     pub async fn send_in_channel<'a>(
@@ -153,6 +135,15 @@ impl Embed {
         channel_id: ChannelId,
         http: &'a Arc<Http>,
     ) -> Result<Message, serenity::Error> {
+        
+
+        channel_id
+            .send_message(http, |b| {
+                b.embed(|b| self.create_embed(b))
+            })
+            .await
+    }
+    pub fn create_embed<'a>(self, mut b: &mut CreateEmbed) -> &mut CreateEmbed {        
         let Self {
             color,
             flavour,
@@ -165,25 +156,28 @@ impl Embed {
 
         let flavour = flavour.unwrap_or(EmbedFlavour::Normal);
         let color = color.unwrap_or(flavour.into());
-        let thumbnail_url = thumbnail_url.unwrap_or(flavour.thumbnail_url().to_string());
 
-        channel_id
-            .send_message(http, |b| {
-                b.embed(|mut b| {
-                    b = b.color(color).thumbnail(thumbnail_url);
+        
+        b = b
+            .color(color);
 
-                    if let Some(title) = title {
-                        b = b.title(title);
-                    }
-                    if let Some(description) = description {
-                        b = b.description(description);
-                    }
-                    if let Some(footer) = footer {
-                        b = b.footer(|b| b.text(footer));
-                    }
-                    b
-                })
-            })
-            .await
+        if let Some(thumbnail_url) = thumbnail_url {
+            b = b.thumbnail(thumbnail_url);
+        }
+
+        if let Some(title) = title {
+            b = b.title(title);
+        }
+        if let Some(description) = description {
+            b = b.description(description);
+        }
+        if let Some(footer) = footer {
+            b = b.footer(|b| b
+                .text(footer));
+        }
+
+        b               
     }
+
+
 }

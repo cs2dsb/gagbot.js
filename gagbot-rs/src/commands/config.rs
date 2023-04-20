@@ -1,7 +1,7 @@
 use poise::{self, serenity_prelude::ChannelId};
 use tokio::sync::oneshot;
 
-use crate::{config::ConfigKey, Context, DbCommand, Error};
+use crate::{Context, DbCommand, Embed, Error, config::ConfigKey, permissions::{Permission, PermissionCheck}};
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Config")]
 /// Print the current value of the provided config key
@@ -10,6 +10,8 @@ pub async fn get_config(
 
     #[description = "The config key you want to look up the value for"] key: ConfigKey,
 ) -> Result<(), Error> {
+    ctx.require_permission(Permission::ConfigManage).await?;
+
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");
@@ -26,12 +28,17 @@ pub async fn get_config(
 
     let value = r.await?;
 
-    ctx.say(match value {
-        Ok(None) => format!("{} is not set", key),
-        Ok(Some(v)) => format!("{} = {}", key, v),
-        Err(e) => format!("Error fetching {}: {:?}", key, e),
-    })
-    .await?;
+    let (msg, err) = match value {
+        Ok(None) => (format!("{} is not set", key), false),
+        Ok(Some(v)) => (format!("{} = {}", key, v), false),
+        Err(e) => (format!("Error fetching {}: {:?}", key, e), true),
+    };
+
+    Embed::default()
+        .description(msg)
+        .set_error(err)
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }
@@ -44,6 +51,8 @@ pub async fn set_config(
     #[description = "The config key you want to set the value for"] key: ConfigKey,
     #[description = "The value you want to change it to"] value: String,
 ) -> Result<(), Error> {
+    ctx.require_permission(Permission::ConfigManage).await?;
+
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");
@@ -63,11 +72,16 @@ pub async fn set_config(
 
     let value = r.await?;
 
-    ctx.say(match value {
-        Ok(()) => format!("{} changed", key),
-        Err(e) => format!("Error setting {}: {:?}", key, e),
-    })
-    .await?;
+    let (msg, err) = match value {
+        Ok(()) => (format!("{} changed", key), false),
+        Err(e) => (format!("Error setting {}: {:?}", key, e), true),
+    };
+
+    Embed::default()
+        .description(msg)
+        .set_error(err)
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }
@@ -79,13 +93,15 @@ pub async fn set_log(
 
     #[description = "The value you want to change it to"] value: ChannelId,
 ) -> Result<(), Error> {
+    ctx.require_permission(Permission::ConfigManage).await?;
+
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");
     let timestamp = ctx.created_at();
 
     let mut msg = String::new();
-
+    let mut is_error = false;
     for key in ConfigKey::logging_keys().iter() {
         let r = ctx.data().set_config(
             guild_id.into(),
@@ -98,10 +114,18 @@ pub async fn set_log(
         }
         msg.push_str(&match r {
             Ok(()) => format!("{} changed", key),
-            Err(e) => format!("Error setting {}: {:?}", key, e),
+            Err(e) => {
+                is_error = true;
+                format!("Error setting {}: {:?}", key, e)
+            },
         });
     }
-    ctx.say(msg).await?;
+
+    Embed::default()
+        .description(msg)
+        .set_error(is_error)
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }
@@ -113,6 +137,8 @@ pub async fn delete_config(
 
     #[description = "The config key you want to delete the value for"] key: ConfigKey,
 ) -> Result<(), Error> {
+    ctx.require_permission(Permission::ConfigManage).await?;
+
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");
@@ -131,11 +157,16 @@ pub async fn delete_config(
 
     let value = r.await?;
 
-    ctx.say(match value {
-        Ok(()) => format!("{} deleted", key),
-        Err(e) => format!("Error deleting {}: {:?}", key, e),
-    })
-    .await?;
+    let (msg, err) = match value {
+        Ok(()) => (format!("{} deleted", key), false),
+        Err(e) => (format!("Error deleting {}: {:?}", key, e), true),
+    };
+
+    Embed::default()
+        .description(msg)
+        .set_error(err)
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }

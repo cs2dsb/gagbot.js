@@ -2,7 +2,8 @@ use anyhow::Result;
 use config::{ConfigKey, LogChannel};
 use include_dir::{include_dir, Dir};
 use lazy_regex::{regex, Captures};
-use poise::serenity_prelude::{Timestamp, User};
+use permissions::{EffectivePermission, Permission};
+use poise::serenity_prelude::{Guild, Member, Timestamp, User};
 use rusqlite::{Connection, OpenFlags};
 use rusqlite_migration::Migrations;
 use tokio::sync::oneshot;
@@ -16,8 +17,7 @@ pub use ids::*;
 mod db;
 pub use db::*;
 
-mod permissions;
-pub use permissions::*;
+pub mod permissions;
 
 mod embed;
 pub use embed::*;
@@ -173,6 +173,113 @@ impl BotData {
             .await?;
         Ok(r.await??)
     }
+
+    pub async fn get_member_permissions(
+        &self,
+        guild: &Guild,
+        member: &Member,
+    ) -> Result<Vec<EffectivePermission>> {
+        let sorted_roles = {
+            let mut roles = guild.roles
+            .values()            
+            // Filter the roles down to only the ones the member has
+            .filter_map(|v| if member.roles.contains(&v.id) {
+                Some((v.position, v.id))
+            } else {
+                None
+            })
+            .collect::<Vec<_>>();
+            
+            // Sort by position so higher roles are on the top
+            roles.sort_by(|(a, _), (b, _)| b.cmp(a));
+
+            roles.into_iter().map(|(_, b)| b.into()).collect::<Vec<_>>()
+        };
+            
+        let guild_id = member.guild_id.into();
+             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetMemberPermissions {
+                guild_id,
+                sorted_roles,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }   
+
+    pub async fn require_permission(
+        &self,
+        guild: &Guild,
+        member: &Member,
+        permission: Permission,
+    ) -> Result<EffectivePermission> {
+        let effective_permission = self
+            .get_member_permissions(guild, member).await?
+            .into_iter()
+            // TODO: do we need anything more sophisticated like a tree of permissions?
+            .find(|x| x.permission == permission || x.permission == Permission::All);
+
+        effective_permission.ok_or(anyhow::anyhow!("Permission denied"))
+    }   
+    
+    pub async fn grant_permission(
+        &self,
+        guild_id: GuildId,
+        role_id: RoleId,
+        permission: Permission,
+        timestamp: Timestamp,
+    ) -> Result<bool> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GrantPermission {
+                guild_id,
+                role_id,
+                permission,
+                timestamp,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }  
+    
+    pub async fn revoke_permission(
+        &self,
+        guild_id: GuildId,
+        role_id: RoleId,
+        permission: Permission,
+        timestamp: Timestamp,
+    ) -> Result<bool> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::RevokePermission {
+                guild_id,
+                role_id,
+                permission,
+                timestamp,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }  
+    
+    pub async fn purge_permission(
+        &self,
+        guild_id: GuildId,
+        timestamp: Timestamp,
+    ) -> Result<bool> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::PurgePermissions {
+                guild_id,
+                timestamp,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }   
+
 }
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

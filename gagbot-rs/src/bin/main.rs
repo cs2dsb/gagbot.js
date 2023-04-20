@@ -89,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Open the DB before launching the task so we can fail before trying to connect
     // to discord
-    let sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
     let (sender, receiver) = flume::bounded::<DbCommand>(args.database_command_channel_bound);
 
     let db_task_handle = tokio::spawn(async move {
@@ -133,6 +133,22 @@ async fn main() -> anyhow::Result<()> {
                             DbCommand::GetGreet { guild_id, respond_to } => {
                                 respond_to.send(config::get_greet(&sqlite_con, guild_id))
                                     .map_err(|_| anyhow::anyhow!("GetGreet respond_to oneshot closed"))?;
+                            },
+                            DbCommand::GetMemberPermissions { guild_id, sorted_roles, respond_to } => {
+                                respond_to.send(permissions::get(&sqlite_con, guild_id, sorted_roles))
+                                    .map_err(|_| anyhow::anyhow!("GetUserPermissions respond_to oneshot closed"))?;
+                            },
+                            DbCommand::GrantPermission { guild_id, role_id, permission, respond_to, timestamp } => {
+                                respond_to.send(permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp))
+                                    .map_err(|_| anyhow::anyhow!("GrantPermission respond_to oneshot closed"))?;
+                            },
+                            DbCommand::RevokePermission { guild_id, role_id, permission, respond_to, timestamp } => {
+                                respond_to.send(permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp))
+                                    .map_err(|_| anyhow::anyhow!("RevokePermission respond_to oneshot closed"))?;
+                            },
+                            DbCommand::PurgePermissions { guild_id, respond_to, timestamp } => {
+                                respond_to.send(permissions::purge(&mut sqlite_con, guild_id, timestamp))
+                                    .map_err(|_| anyhow::anyhow!("PurgePermissions respond_to oneshot closed"))?;
                             },
                         }
                     },
@@ -214,15 +230,28 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn on_error(error: FrameworkError<'_, BotData, Error>) {
-    warn!("error from poise: {:?}", error);
-    if let FrameworkError::ArgumentParse {
-        error,
-        ctx,
-        ..
-    } = error
-    {
-        if let Err(e) = ctx.say(error.to_string()).await {
-            error!("Error from ctx.say: {}", e)
+    
+    let msg = match &error {
+        FrameworkError::ArgumentParse { error, ..} => {
+            Some(error.to_string())
+        },
+        FrameworkError::Command { error, .. } => {
+            // TODO: Probably do something more fancy with user facing errors and the like?
+            Some(error.to_string())
+        },
+        
+        e => {
+            warn!("UNHANDLED error from poise: {:?}", e);
+            None
+        },
+    };
+
+    if let (Some(msg), Some(ctx)) = (msg, error.ctx().as_ref()) {
+        if let Err(e) = Embed::error()
+            .description(msg)
+            .send(ctx).await
+        {
+            error!("Error from ctx.send in error handler: {:?}", e);
         }
     }
 }
@@ -255,11 +284,11 @@ async fn event_handler<'a>(
                     .map(|v| v.into()));
 
             if let Some(chan) = channel_id {
-                chan.say(
-                    &ctx.http,
-                    format!("I'm here: {}", Timestamp::now().to_rfc2822()),
-                )
-                .await?;
+                Embed::default()
+                    .title("I'm here")
+                    .footer(format!("{}", Timestamp::now().to_rfc2822()))
+                    .send_in_channel(chan, &ctx.http)
+                    .await?;
             } else {
                 warn!("Failed to get log, system or default channels to log to");
             }
