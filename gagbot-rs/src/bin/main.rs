@@ -61,11 +61,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use futures::future::join;
 use gagbot_rs::{config::LogChannel, *};
-use poise::{
-    self,
-    serenity_prelude::{self as serenity, CacheHttp, GatewayIntents, Timestamp},
-    FrameworkContext, FrameworkError,
-};
+use poise::{self, FrameworkContext, FrameworkError, serenity_prelude::{self as serenity, ActionRowComponent, CacheHttp, ComponentType, GatewayIntents, Interaction, Timestamp}};
 use tracing::*;
 
 #[derive(Debug, Parser)]
@@ -150,6 +146,18 @@ async fn main() -> anyhow::Result<()> {
                                 respond_to.send(permissions::purge(&mut sqlite_con, guild_id, timestamp))
                                     .map_err(|_| anyhow::anyhow!("PurgePermissions respond_to oneshot closed"))?;
                             },
+                            DbCommand::UpdateInteractionRoleSet { guild_id, name, description, channel_id, message_id, exclusive, timestamp, respond_to } => {
+                                respond_to.send(interaction_roles::update(&sqlite_con, guild_id, name, description, channel_id, message_id, exclusive, timestamp))
+                                    .map_err(|_| anyhow::anyhow!("UpdateInteractionRoleSet respond_to oneshot closed"))?;
+                            },
+                            DbCommand::GetInteractionRole { guild_id, name, respond_to } => {
+                                respond_to.send(interaction_roles::get(&sqlite_con, guild_id, name ))
+                                    .map_err(|_| anyhow::anyhow!("GetInteractionRoleSet respond_to oneshot closed"))?;
+                            },
+                            DbCommand::UpdateInteractionRoleChoice { guild_id, set_name, choice, emoji, role_id, timestamp, respond_to } => {
+                                respond_to.send(interaction_roles::update_choice(&sqlite_con, guild_id, set_name, choice, emoji, role_id, timestamp ))
+                                    .map_err(|_| anyhow::anyhow!("UpdateInteractionRoleChoice respond_to oneshot closed"))?;
+                            }
                         }
                     },
                 },
@@ -393,8 +401,123 @@ async fn event_handler<'a>(
                     .await?;
             } 
         }
+        InteractionCreate { interaction } => {
+            handle_message_component_interaction(ctx, data, interaction).await?;            
+        }
         _ => {}
     }
 
     Ok(())
+}
+
+async fn handle_message_component_interaction<'a>(ctx: &serenity::Context, data: &'a BotData, interaction: &'a Interaction) -> anyhow::Result<Option<String>> {
+    let message_component = if let Interaction::MessageComponent(mc) = interaction {
+        mc
+    } else {
+        return Ok(None);
+    };
+
+    if message_component.guild_id.is_none() ||
+       message_component.data.component_type != ComponentType::Button 
+    {        
+        return Ok(None);
+    }
+
+    fn split_custom_id(custom_id: Option<&str>) -> anyhow::Result<(String, RoleId)> {
+        let custom_id = custom_id.ok_or(anyhow::anyhow!("Interaction custom_id missing"))?;
+        let parts = custom_id
+            .split(INTERACTION_BUTTON_CUSTOM_ID_DELIMITER)
+            .collect::<Vec<_>>();
+
+        if parts.len() == 3 && parts[0] == INTERACTION_BUTTON_CUSTOM_ID_PREFIX {
+            Ok((parts[1].to_string(), RoleId::from(parts[2].parse::<u64>()?)))
+        } else {
+            Err(anyhow::anyhow!("Interaction custom_id didn't match the expected format"))
+        }
+    }
+
+    let (name, _) = split_custom_id(Some(message_component.data.custom_id.as_str()))?;
+
+    let guild_id = message_component.guild_id.unwrap();
+    
+    let message = &message_component.message;
+    let embed = if message.embeds.len() == 1 {
+        &message.embeds[0]
+    } else {
+        Err(anyhow::anyhow!("Button interaction with more than one embed. Don't know how to parse that"))?
+    };
+    let timestamp = interaction.id().created_at();
+
+    let mut choices = Vec::new();
+    for button in message.components
+        .iter()
+        .map(|row| row
+            .components
+            .iter())
+        .flatten()
+        .filter_map(|component| if let &ActionRowComponent::Button(ref b) = component {
+            Some(b)
+        } else {
+            None
+        })
+    {
+        let choice = button.label.as_ref().ok_or(anyhow::anyhow!("Interaction button with no label not supported"))?.clone();
+        let (_, role_id) = split_custom_id(button.custom_id.as_ref().map(|v| v.as_str()))?;
+        let emoji = button.emoji.as_ref().map(|v| format!("{}", v));
+
+        choices.push((choice, role_id, emoji));
+    }
+
+    let mut ir = None;
+    for i in 0..3 {
+        ir = data.get_interaction_role(guild_id.into(), name.clone()).await?;
+        
+        match (i, ir.is_some()) {
+            (0, false) => {
+                data.update_interaction_role(
+                    guild_id.into(), 
+                    name.clone(), 
+                    embed.description.clone(), 
+                    message.channel_id.into(), 
+                    Some(message.id.into()),
+                    false, 
+                    timestamp,
+                ).await?;
+            },
+            (_, true) => {
+                let ir = ir.as_ref().unwrap();
+                choices.retain(|(choice, _, _)| !ir.choices.iter().any(|v| &v.choice == choice));
+
+                if choices.len() > 0 {
+                    // Create the choices
+                    for (choice, role_id, emoji) in choices.iter() {                    
+                        data.update_interaction_choice(
+                            guild_id.into(), 
+                            name.clone(), 
+                            choice.clone(), 
+                            emoji.clone(), 
+                            *role_id, 
+                            timestamp,
+                        ).await?;                 
+                    }   
+                } else {
+                    // No need to fetch again
+                    break;
+                }                
+            },
+            (_, false) => Err(anyhow::anyhow!("Failed to create interaction role from button interaction"))?,
+        }
+    }
+    
+    message_component.create_interaction_response(&ctx.http, |b| b
+        .interaction_response_data(|b| b
+            .ephemeral(true)
+            .embed(|b|                 
+                Embed::default()
+                    .description(format!("{:#?}", ir))
+                    .create_embed(b)
+    )))
+    .await?;
+
+    Ok(None)
 }

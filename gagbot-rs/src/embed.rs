@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use poise::{
-    serenity_prelude::{self as serenity, Http, Message, CreateEmbed},
-    ChoiceParameter, ReplyHandle,
-};
+use poise::{ChoiceParameter, ReplyHandle, serenity_prelude::{self as serenity, CreateEmbed, Http, Message, MessageId}};
 use serenity::Color;
+use tracing::error;
 
 use crate::{
     ChannelId, Context, GAGBOT_COLOR_ERROR, GAGBOT_COLOR_LOG_DELETE, GAGBOT_COLOR_LOG_EDIT,
@@ -57,6 +55,7 @@ pub struct Embed {
     pub description: Option<String>,
     pub footer: Option<String>,
     pub ephemeral: Option<bool>,
+    pub reply_to: Option<(ChannelId, MessageId)>,
 }
 
 impl Embed {
@@ -121,6 +120,10 @@ impl Embed {
         self.ephemeral = Some(ephemeral);
         self
     }
+    pub fn reply_to(mut self, reply_to: (ChannelId, MessageId)) -> Self {
+        self.reply_to = Some(reply_to);
+        self
+    }
     pub async fn send<'a>(self, ctx: &Context<'a>) -> Result<ReplyHandle<'a>, serenity::Error> {
         let ephemeral = self.ephemeral.unwrap_or(true);
 
@@ -131,15 +134,26 @@ impl Embed {
         .await
     }
     pub async fn send_in_channel<'a>(
-        self,
+        mut self,
         channel_id: ChannelId,
         http: &'a Arc<Http>,
     ) -> Result<Message, serenity::Error> {
-        
+        let message = if let Some((reply_to_channel, reply_to_message)) = self.reply_to.take() {
+            if reply_to_channel != channel_id {
+                error!("send_in_channel channel_id != reply_to.channel_id");
+            }
+            Some(reply_to_message)
+        } else {
+            None
+        };
 
         channel_id
-            .send_message(http, |b| {
-                b.embed(|b| self.create_embed(b))
+            .send_message(http, |mut b| {
+                b = b.embed(|b| self.create_embed(b));
+                if let Some(message) = message {
+                    b = b.reference_message((*channel_id, message));   
+                }
+                b
             })
             .await
     }

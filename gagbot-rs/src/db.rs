@@ -1,7 +1,7 @@
 use poise::serenity_prelude::{ Timestamp };
 use tokio::sync::oneshot;
 
-use crate::{ChannelId, GuildId, RoleId, UserId, config::{ConfigKey, LogChannel}, permissions::{EffectivePermission, Permission}};
+use crate::{MessageId, ChannelId, GuildId, RoleId, UserId, config::{ConfigKey, LogChannel}, interaction_roles::InteractionRole, permissions::{EffectivePermission, Permission}};
 
 #[derive(Debug)]
 pub enum DbCommand {
@@ -73,4 +73,28 @@ pub enum DbCommand {
         timestamp: Timestamp,
         respond_to: oneshot::Sender<anyhow::Result<bool>>,
     },
+    UpdateInteractionRoleSet {
+        guild_id: GuildId,
+        name: String,
+        description: Option<String>,
+        channel_id: ChannelId,
+        message_id: Option<MessageId>,
+        exclusive: bool,
+        timestamp: Timestamp,
+        respond_to: oneshot::Sender<anyhow::Result<bool>>,
+    },
+    UpdateInteractionRoleChoice {
+        guild_id: GuildId,
+        set_name: String,
+        choice: String,
+        emoji: Option<String>,
+        role_id: RoleId,
+        timestamp: Timestamp,
+        respond_to: oneshot::Sender<anyhow::Result<bool>>,
+    },
+    GetInteractionRole {
+        guild_id: GuildId,
+        name: String,
+        respond_to: oneshot::Sender<anyhow::Result<Option<InteractionRole>>>,
+    }
 }

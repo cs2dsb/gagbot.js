@@ -1,6 +1,7 @@
 use anyhow::Result;
 use config::{ConfigKey, LogChannel};
 use include_dir::{include_dir, Dir};
+use interaction_roles::InteractionRole;
 use lazy_regex::{regex, Captures};
 use permissions::{EffectivePermission, Permission};
 use poise::serenity_prelude::{Guild, Member, Timestamp, User};
@@ -18,6 +19,7 @@ mod db;
 pub use db::*;
 
 pub mod permissions;
+pub mod interaction_roles;
 
 mod embed;
 pub use embed::*;
@@ -35,7 +37,17 @@ pub const GAGBOT_COLOR_LOG_DELETE: i32 = 0x9c3730;
 pub const GAGBOT_COLOR_GREET: i32 = 0x65e7b7;
 pub const GAGBOT_COLOR_LOG_JOIN: i32 = 0x009900;
 pub const GAGBOT_COLOR_LOG_LEAVE: i32 = 0x990044;
- 
+
+pub const INTERACTION_BUTTON_CUSTOM_ID_MAX_LEN: usize = 100;
+pub const INTERACTION_BUTTON_CUSTOM_ID_ROLE_ID_MAX_LEN: usize = 21;
+pub const INTERACTION_BUTTON_CUSTOM_ID_DELIMITER: char = '¬';
+pub const INTERACTION_BUTTON_CUSTOM_ID_PREFIX: &str = "rr";
+pub const INTERACTION_BUTTON_CUSTOM_ID_NAME_MAX_LEN: usize = 
+    INTERACTION_BUTTON_CUSTOM_ID_MAX_LEN 
+    - INTERACTION_BUTTON_CUSTOM_ID_ROLE_ID_MAX_LEN
+    - 1 //delimiter
+    - INTERACTION_BUTTON_CUSTOM_ID_PREFIX.len();
+
 /// The edit tracking functionality won't work without some cached messages
 /// 200 is the default from discord.js <https://github.com/discordjs/discord.js/blob/86e5f5a119c6d2588b988a33236d358ded357847/packages/discord.js/src/util/Options.js#L175>
 pub const CACHE_MAX_MESSAGES: usize = 200;
@@ -278,8 +290,73 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    }   
-
+    }  
+    
+    pub async fn get_interaction_role(
+        &self,
+        guild_id: GuildId,
+        name: String,
+    ) -> Result<Option<InteractionRole>> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetInteractionRole {
+                guild_id,
+                name,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }  
+    
+    pub async fn update_interaction_role(
+        &self,
+        guild_id: GuildId,
+        name: String,
+        description: Option<String>,
+        channel_id: ChannelId,
+        message_id: Option<MessageId>,
+        exclusive: bool,
+        timestamp: Timestamp,
+    ) -> Result<bool> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::UpdateInteractionRoleSet {
+                guild_id,
+                name,
+                description,
+                channel_id,
+                message_id,
+                exclusive,
+                timestamp,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    } 
+    
+    pub async fn update_interaction_choice(
+        &self,
+        guild_id: GuildId,
+        set_name: String,
+        choice: String,
+        emoji: Option<String>,    
+        role_id: RoleId,    
+        timestamp: Timestamp,
+    ) -> Result<bool> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::UpdateInteractionRoleChoice {
+                guild_id,
+                set_name,
+                choice,
+                emoji,
+                role_id,
+                timestamp,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    } 
 }
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

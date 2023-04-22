@@ -3,7 +3,7 @@ use rusqlite::{types::{ToSqlOutput, FromSql, ValueRef, FromSqlResult, FromSqlErr
 
 macro_rules! wrap_id {
     ($wrapper:ident) => {
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Debug, Clone, Copy, PartialEq)]
         pub struct $wrapper(poise::serenity_prelude::model::id::$wrapper);
         impl ToSql for $wrapper {
             fn to_sql(&self) -> Result<ToSqlOutput, rusqlite::Error> {
@@ -66,3 +66,4 @@ wrap_id!(ChannelId);
 id_from_str!(ChannelId);
 
 wrap_id!(UserId);
+wrap_id!(MessageId);
