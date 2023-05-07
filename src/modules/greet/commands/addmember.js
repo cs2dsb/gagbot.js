@@ -78,12 +78,16 @@ module.exports = class AddMemberCommand extends Command {
         const drid = doc.data.greet.default_role;
         if (drid && member.roles.cache.has(drid)) {
             const role = guild.roles.cache.get(drid);
+            console.log(`!am => removing @${role.name} from ${member.displayName}`);
+
             member.roles.remove(role).then(() => {
                 console.log(`!am =>   ...done removing @${role.name} from ${member.displayName}`);
             }).catch((err) => {
                 console.log(`!am =>   ...error removing @${role.name} from ${member.displayName}`);
                 console.error(err);
             });
+        } else {
+            console.log(`!am => drid: ${drid}. member: ${member.displayName}. Nothing to remove?`);
         }
 
         const cid = doc.data.greet.welcomechannel;
