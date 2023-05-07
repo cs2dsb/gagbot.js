@@ -67,7 +67,7 @@ module.exports = {
         const drid = doc.data.greet.default_role;
         if (drid && guild.roles.cache.has(drid) && guild.members.cache.has(user.id)) {
             const role = guild.roles.cache.get(drid);
-            const member = guild.member.cache.get(user.id);
+            const member = guild.members.cache.get(user.id);
     
             member.roles.add(role).catch(function(err) {
                 console.error(`Error while adding member role:\n${err}`);
