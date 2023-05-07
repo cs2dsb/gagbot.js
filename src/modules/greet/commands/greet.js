@@ -41,9 +41,28 @@ module.exports = class GreetCommand extends Command {
             message.channel.send('No such user.');
             return true;
         }
-        const user = message.guild.members.cache.get(uid).user;
+        const member = message.guild.members.cache.get(uid);
+        const user = member.user;
 
         client.emit('greet', message.guild, user, message.channel);
+
+        // Get the guild doc
+        const doc = await client.db.guild.findOne({id: message.guild.id});
+        if (!doc) {
+            message.channel.send(`***${client.config.errorMessage}***\n Something went wrong...`);
+            console.error(`Error while greeting user:\n  Couldn't find a guild document with {id: ${gid}}`);
+            return true;
+        }
+
+        const guild = message.guild;
+        const drid = doc.data.greet.default_role;
+        if (drid && guild.roles.cache.has(drid)) {
+            const role = guild.roles.cache.get(drid);
+    
+            member.roles.add(role).catch(function(err) {
+                console.error(`Error while adding member role:\n${err}`);
+            });
+        }
 
         return true;
     }

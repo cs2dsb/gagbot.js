@@ -9,6 +9,8 @@ set -o nounset
 # Exit when a piped command returns a non-zero exit code
 set -o pipefail
 
+set -x
+
 # Script to install the various tools required
 
 
@@ -18,7 +20,9 @@ readonly third_party_dir="${repo_dir}/third_party"
 readonly node_dir="${third_party_dir}/nodejs"
 readonly node_version=16.16.0
 readonly node_dl_addr="https://nodejs.org/dist/v${node_version}/node-v${node_version}-linux-x64.tar.xz"
-readonly node_bin_path="${node_dir}/bin/node"
+readonly node_bin_dir="${node_dir}/bin"
+readonly node_bin_path="${node_bin_dir}/node"
+readonly npm_bin_path="${node_bin_dir}/npm"
 
 readonly mongo_dir="${third_party_dir}/mongodb"
 readonly mongo_dl_addr="https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2004-6.0.0.tgz"
@@ -83,3 +87,11 @@ install_dep \
     rm mongojs.tgz; \
     rm mongosh.tgz; \
     "
+
+# Install the npm packages
+cd ${repo_dir}
+PATH="$node_bin_dir:$PATH" ${npm_bin_path} install
+
+# Check for required system libs
+(ldconfig -p | grep -q libcrypto.so.1.1) || echo "libcrypto.so.1.1 is missing. Mongo won't work without it. Package is likely openssl-1.1"; exit 1;
+

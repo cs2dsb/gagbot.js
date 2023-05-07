@@ -92,6 +92,16 @@ module.exports = {
             console.error(`Invalid greeting channel!`);
         }
 
+        const guild = member.guild;
+        const drid = doc.data.greet.default_role;
+        if (drid && guild.roles.cache.has(drid)) {
+            const role = guild.roles.cache.get(rid);
+    
+            member.roles.add(role).catch(function(err) {
+                console.error(`Error while adding member role:\n${err}`);
+            });
+        }
+
         const channel = member.guild.channels.cache.get(cid);
 
         client.emit('greet', member.guild, member.user, channel);
