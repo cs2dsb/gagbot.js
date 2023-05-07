@@ -69,26 +69,25 @@ module.exports = class AddMemberCommand extends Command {
 
         member.roles.add(role).then(function() {
             message.channel.send(`Added role **@${role.name}** to ${member}!`);
+
+            const drid = doc.data.greet.default_role;
+            if (drid && member.roles.cache.has(drid)) {
+                const d_role = guild.roles.cache.get(drid);
+                console.log(`!am => removing @${role.name} from ${member.displayName}`);
+
+                member.roles.remove(d_role).then(() => {
+                    console.log(`!am =>   ...done removing @${role.name} from ${member.displayName}`);
+                }).catch((err) => {
+                    console.log(`!am =>   ...error removing @${role.name} from ${member.displayName}`);
+                    console.error(err);
+                });
+            } else {
+                console.log(`!am => drid: ${drid}. member: ${member.displayName}. Nothing to remove?`);
+            }
         }).catch(function(err) {
             message.channel.send(`***${client.config.errorMessage}***\n Something went wrong...`);
             console.error(`Error while adding member role:\n${err}`);
-        });
-
-
-        const drid = doc.data.greet.default_role;
-        if (drid && member.roles.cache.has(drid)) {
-            const role = guild.roles.cache.get(drid);
-            console.log(`!am => removing @${role.name} from ${member.displayName}`);
-
-            member.roles.remove(role).then(() => {
-                console.log(`!am =>   ...done removing @${role.name} from ${member.displayName}`);
-            }).catch((err) => {
-                console.log(`!am =>   ...error removing @${role.name} from ${member.displayName}`);
-                console.error(err);
-            });
-        } else {
-            console.log(`!am => drid: ${drid}. member: ${member.displayName}. Nothing to remove?`);
-        }
+        });        
 
         const cid = doc.data.greet.welcomechannel;
         const hello = doc.data.greet?.welcomemessage;
