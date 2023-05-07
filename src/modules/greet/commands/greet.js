@@ -34,7 +34,6 @@ module.exports = class GreetCommand extends Command {
      * @returns {boolean}
      */
     async execute(client, message, args) {
-
         // Get the user by ID
         const uid = args.get(0);
         if (!message.guild.members.cache.has(uid)) {
@@ -45,24 +44,6 @@ module.exports = class GreetCommand extends Command {
         const user = member.user;
 
         client.emit('greet', message.guild, user, message.channel);
-
-        // Get the guild doc
-        const doc = await client.db.guild.findOne({id: message.guild.id});
-        if (!doc) {
-            message.channel.send(`***${client.config.errorMessage}***\n Something went wrong...`);
-            console.error(`Error while greeting user:\n  Couldn't find a guild document with {id: ${gid}}`);
-            return true;
-        }
-
-        const guild = message.guild;
-        const drid = doc.data.greet.default_role;
-        if (drid && guild.roles.cache.has(drid)) {
-            const role = guild.roles.cache.get(drid);
-    
-            member.roles.add(role).catch(function(err) {
-                console.error(`Error while adding member role:\n${err}`);
-            });
-        }
 
         return true;
     }

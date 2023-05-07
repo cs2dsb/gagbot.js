@@ -63,6 +63,16 @@ module.exports = {
 
         // Send the greeting
         channel.send({ embeds: [embed]});
+
+        const drid = doc.data.greet.default_role;
+        if (drid && guild.roles.cache.has(drid) && guild.member.cache.has(user.id)) {
+            const role = guild.roles.cache.get(drid);
+            const member = guild.member.cache.get(user.id);
+    
+            member.roles.add(role).catch(function(err) {
+                console.error(`Error while adding member role:\n${err}`);
+            });
+        }
     },
 
     /**
