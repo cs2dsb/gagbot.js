@@ -31,5 +31,6 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         revoke_permission(),
         purge_permission(),
         test_interaction_roles(),
+        get_table_sizes(),
     ]
 }

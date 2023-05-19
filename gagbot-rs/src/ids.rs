@@ -15,9 +15,24 @@ macro_rules! wrap_id {
                 Self(value)
             }
         }
+        impl From<&poise::serenity_prelude::model::id::$wrapper> for $wrapper {
+            fn from(value: &poise::serenity_prelude::model::id::$wrapper) -> Self {
+                Self(*value)
+            }
+        }
         impl From<u64> for $wrapper {
             fn from(value: u64) -> Self {
                 Self(poise::serenity_prelude::model::id::$wrapper(value))
+            }
+        }
+        impl Into<u64> for &$wrapper {
+            fn into(self) -> u64 {
+                self.0.0
+            }
+        }
+        impl Into<u64> for $wrapper {
+            fn into(self) -> u64 {
+                self.0.0
             }
         }
         impl Deref for $wrapper {
@@ -26,7 +41,6 @@ macro_rules! wrap_id {
                 &self.0
             }
         }
-
     };
 }
 

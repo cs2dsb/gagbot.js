@@ -61,3 +61,6 @@ flume = "0.10.14"
 
 # Wrapper around regex crate that makes creating lazy static regex
 lazy-regex = "2.5.0"
+
+# Convert bytes to human readable units
+humansize = "2.1.3"

@@ -1,11 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result};
 use config::{ConfigKey, LogChannel};
 use include_dir::{include_dir, Dir};
 use interaction_roles::InteractionRole;
 use lazy_regex::{regex, Captures};
+use message_log::{LogType, MessageLog};
 use permissions::{EffectivePermission, Permission};
 use poise::serenity_prelude::{Guild, Member, Timestamp, User};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use rusqlite_migration::Migrations;
 use tokio::sync::oneshot;
 
@@ -20,9 +21,11 @@ pub use db::*;
 
 pub mod permissions;
 pub mod interaction_roles;
+pub mod message_log;
 
 mod embed;
 pub use embed::*;
+use tracing::debug;
 
 pub mod commands;
 
@@ -357,6 +360,71 @@ impl BotData {
             .await?;
         Ok(r.await??)
     } 
+    
+    pub async fn log_message<T>(
+        &self,
+        guild_id: GuildId,
+        user_id: Option<UserId>,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        timestamp: Timestamp,
+        type_: LogType,
+        content: Option<T>,
+    ) -> Result<()> 
+    where 
+        T: Into<String>
+    {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::LogMessage {
+                guild_id,
+                user_id,
+                channel_id,
+                message_id,
+                timestamp,
+                type_,
+                content: content.map(|v| v.into()),
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    } 
+
+    pub async fn get_message_log(
+        &self,
+        guild_id: GuildId,
+        channel_id: ChannelId,
+        message_id: MessageId,        
+    ) -> Result<Vec<MessageLog>> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetLogMessages { 
+                guild_id,
+                channel_id,
+                message_id,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    } 
+
+    pub async fn lookup_user_from_message(
+        &self,
+        guild_id: GuildId,
+        channel_id: ChannelId,
+        message_id: MessageId,        
+    ) -> Result<Option<UserId>> {             
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetUserFromLogMessages { 
+                guild_id,
+                channel_id,
+                message_id,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    } 
 }
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -391,6 +459,9 @@ pub fn open_database(connection_string: &str, create: bool) -> Result<Connection
     con.pragma_update(None, "journal_mode", "WAL")?;
     con.pragma_update(None, "synchronous", "NORMAL")?;
     con.pragma_update(None, "foreign_keys", "ON")?;
+
+    debug!("Checking DB is writable");
+    con.transaction_with_behavior(TransactionBehavior::Exclusive)?;
 
     Ok(con)
 }

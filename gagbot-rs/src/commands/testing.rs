@@ -1,5 +1,4 @@
-use poise::{self, serenity_prelude::{ButtonStyle, ChannelId, Color,  RoleId, User}};
-use tracing::warn;
+use poise::{self, serenity_prelude::{ButtonStyle, ChannelId, Color,  User}};
 
 use crate::{Context, Embed, EmbedFlavour, Error, INTERACTION_BUTTON_CUSTOM_ID_DELIMITER, INTERACTION_BUTTON_CUSTOM_ID_PREFIX};
 

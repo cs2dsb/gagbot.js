@@ -1,7 +1,8 @@
 use poise::serenity_prelude::{ Timestamp };
+use rusqlite::Connection;
 use tokio::sync::oneshot;
 
-use crate::{MessageId, ChannelId, GuildId, RoleId, UserId, config::{ConfigKey, LogChannel}, interaction_roles::InteractionRole, permissions::{EffectivePermission, Permission}};
+use crate::{MessageId, ChannelId, GuildId, RoleId, UserId, config::{ConfigKey, LogChannel}, interaction_roles::InteractionRole, permissions::{EffectivePermission, Permission}, message_log::{LogType, MessageLog}};
 
 #[derive(Debug)]
 pub enum DbCommand {
@@ -96,5 +97,40 @@ pub enum DbCommand {
         guild_id: GuildId,
         name: String,
         respond_to: oneshot::Sender<anyhow::Result<Option<InteractionRole>>>,
+    },
+    LogMessage {
+        guild_id: GuildId,
+        user_id: Option<UserId>,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        timestamp: Timestamp,
+        type_: LogType,
+        content: Option<String>,
+        respond_to: oneshot::Sender<anyhow::Result<()>>,
+    },
+    GetLogMessages {
+        guild_id: GuildId,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        respond_to: oneshot::Sender<anyhow::Result<Vec<MessageLog>>>,
+    },
+    GetUserFromLogMessages {
+        guild_id: GuildId,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        respond_to: oneshot::Sender<anyhow::Result<Option<UserId>>>,
+    },
+    GetTableBytes {
+        respond_to: oneshot::Sender<anyhow::Result<Vec<(String, u64)>>>,
     }
+}
+
+pub fn get_table_bytes(db: &Connection) -> anyhow::Result<Vec<(String, u64)>> {
+    let mut stmt = db.prepare("SELECT name, SUM(pgsize) FROM dbstat GROUP BY name")?;
+
+    let r = stmt.query_map([],
+        |r| Ok((r.get(0)?, r.get(1)?))
+    )?.collect::<Result<_, _>>()?;
+
+    Ok(r)
 }
