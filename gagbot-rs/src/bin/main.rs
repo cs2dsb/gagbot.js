@@ -1,9 +1,5 @@
 // TODO:
 //
-// Events:
-// on_voiceStateUpdate
-// Log when a joins, leaves, or moves to a different voice channel
-
 // on_messageReactionAdd
 // Add role corresponding to emoji
 // on_messageReactionRemove
@@ -63,7 +59,7 @@ use dotenv::dotenv;
 use futures::future::join;
 use gagbot_rs::{config::LogChannel, *, message_log::{LogType, MessageLog}};
 use humansize::{make_format, BINARY};
-use poise::{self, FrameworkContext, FrameworkError, serenity_prelude::{self as serenity, ActionRowComponent, CacheHttp, ComponentType, GatewayIntents, Interaction, Timestamp, Message, Context, Guild}};
+use poise::{self, FrameworkContext, FrameworkError, serenity_prelude::{self as serenity, ActionRowComponent, CacheHttp, ComponentType, GatewayIntents, Interaction, Timestamp, Message, Context, Guild, MessageUpdateEvent, VoiceState}};
 use tokio::time;
 use tracing::*;
 use std::{fmt::Write, time::Duration, num::ParseIntError};
@@ -420,280 +416,312 @@ async fn event_handler<'a>(
     debug!("got event: {}", event.name());
     trace!("EVENT VALUE: {:#?}", event);
     match event {
-        GuildCreate {
-            guild, ..
-        } => {
-            poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id)
-                .await?;
-
-            // TODO: currently this kind of ? will crash the bot. Is this what we want to
-            // happen on DB errors?
-            let channel_id = data
-                .general_log_channel(guild.id.into())
-                .await?
-                .or(guild.system_channel_id.map(|v| v.into()))
-                .or(guild
-                    .default_channel_guaranteed()
-                    .map(|c| c.id)
-                    .map(|v| v.into()));
-
-            if let Some(chan) = channel_id {
-                Embed::default()
-                    .title("I'm here")
-                    .description(format!("<t:{}>", Utc::now().timestamp()))
-                    .send_in_channel(chan, &ctx.http)
-                    .await?;
-            } else {
-                warn!("Failed to get log, system or default channels to log to");
-            }
-
-            // Launch background tasks for the guild
-            tokio::spawn(background_tasks(
-                data.clone(),      
-                ctx.clone(),
-                guild.clone(),
-            ));
-        }
-        Message {
-            new_message,
-        } => {
-            // We only want in guild messages
-            if let Some(guild_id) = new_message.guild_id {
-                let user_id = new_message.author.id;
-                
-                let channel_id = new_message.channel_id;
-                let message_id = new_message.id;
-
-                data.increment_message_count(guild_id.into(), user_id.into(), channel_id.into())
-                    .await?;                
-
-                data.log_message(
-                    guild_id.into(), 
-                    Some(user_id.into()), 
-                    channel_id.into(),
-                    message_id.into(),
-                    new_message.timestamp,
-                    LogType::Create,
-                    Some(new_message.clone()),
-                ).await?;
-            }
-        }
-        MessageUpdate {
-            old_if_available,
-            new,
-            event,
-        } => {
-            if let (Some(guild_id), Some(old), Some(new)) = (event.guild_id, old_if_available, new)
-            {
-                let user = &old.author;
-                // TODO: handle images and videos? They currently don't show
-                if !user.bot && old.content != new.content {
-                    if let Some(channel_id) = data
-                        .log_channel(guild_id.into(), vec![LogChannel::EditsAndDeletes])
-                        .await?
-                    {
-                        let channel_id_n = channel_id.0;
-                        let message_id = new.id.0;
-                        let user_id = user.id.0;
-                        let before = &old.content;
-                        let after = &new.content;
-                        let before_timestamp = old.timestamp.timestamp();
-                        let after_timestamp = new.timestamp.timestamp();
-                        Embed::default()
-                            .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
-                            .flavour(EmbedFlavour::LogEdit)
-                            .send_in_channel(channel_id, &ctx.http)
-                            .await?;
-                    }
-                }
-
-                data.log_message(
-                    guild_id.into(), 
-                    Some(new.author.id.into()), 
-                    new.channel_id.into(),
-                    new.id.into(),
-                    event.edited_timestamp.unwrap_or(Timestamp::now()),
-                    LogType::Edit,
-                    Some(new.clone()),
-                ).await?;
-            }
-        }
-        MessageDelete {
-            channel_id,
-            deleted_message_id,
-            guild_id,
-        } => {            
-            if let Some(guild_id) = guild_id {                
-                // Log to the log channel only if it is configured
-                if let Some(log_channel_id) = data
-                    .log_channel((*guild_id).into(), vec![LogChannel::EditsAndDeletes])
-                    .await?
-                {
-                    let mut is_bot = false;
-                    let mut user_id = None;
-                    let mut msg = format!("**Message {deleted_message_id} in <#{channel_id}> deleted**\n");
-                    let mut cache_hit = false;
-
-                    // This attempts to get it from the cache
-                    if let Some(cache) = ctx.cache() {
-                        if let Some(message) = cache.message(channel_id, deleted_message_id) {
-                            let content = message_to_string(&message)?
-                                .unwrap_or(" ".to_string())
-                                .replace("\n", "\n> ");
-                            is_bot = message.author.bot;
-                            user_id = Some(message.author.id);
-                            let user_id = message.author.id.0;
-                            let timestamp = message.timestamp.timestamp();
-                            if !is_bot {
-                                write!(&mut msg, "*Message from cache* (<t:{timestamp}> - <@{user_id}>):\n> {}\n\n", content)?;
-                            }
-                            cache_hit = true;
-                        } else {
-                            warn!(
-                                "Failed to look up deleted_message_id ({}/{}) from cache for guild {}",
-                                channel_id, deleted_message_id, guild_id
-                            );
-                        }
-                    }
-
-                    if !cache_hit {
-                        write!(&mut msg, "*Deleted message was not in the cache.*\n")?;
-                    }
-                    
-                    // Log to the DB, we always do this regardless of config
-                    data.log_message(
-                        guild_id.into(), 
-                        // TODO: Audit log 
-                        None, 
-                        channel_id.into(),
-                        deleted_message_id.into(),
-                        // Seems like serenity should provide the timestamp of the event from discord but it doesn't seem to
-                        Timestamp::now(),
-                        LogType::Delete,
-                        None,
-                    ).await?;
-
-                    // Attempt to get the audit log entry for the delete
-                    let mut audit_entry = None;
-                    if let Some(guild) = ctx.cache.guild(guild_id) {
-                        let audit_log = match guild.audit_logs(
-                            ctx, 
-                            // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
-                            Some(72), 
-                            None, 
-                            None, 
-                            None,
-                        ).await {
-                            Err(e) => {
-                                error!("Error getting audit logs: {:?}", e);
-                                None
-                            },
-                            Ok(logs) => Some(logs),
-                        };
-
-                        if let Some(audit_log) = audit_log {     
-                            if audit_log.entries.len() > 0 {
-                                // We need a user_id as part of the check
-                                if user_id.is_none() {
-                                    match data.lookup_user_from_message(
-                                        guild_id.into(), 
-                                        channel_id.into(), 
-                                        deleted_message_id.into(),
-                                    ).await {
-                                        Ok(user_id_) => user_id = user_id_.map(|v| *v),
-                                        Err(e) => error!("Error looking up user_id from message log: {:?}", e),
-                                    }
-                                }
-
-                                if let Some(user_id) = user_id {    
-                                    audit_entry = audit_log
-                                        .entries
-                                        .into_iter()
-                                        .find(|v| {
-                                            if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
-                                                if target_id == user_id.0 &&
-                                                    options.channel_id.as_ref() == Some(channel_id)
-                                                {
-                                                    return true
-                                                }
-                                            }
-                                            false
-                                        });
-                                } else {
-                                    warn!("Couldn't get a user_id for a deleted message");
-                                }
-                            }                       
-                        }
-                    } else {
-                        error!("Failed to get Guild instance from ctx.cache");
-                    }
-                    
-
-                    if !is_bot {
-                        let log = log_message_history(data, guild_id.into(), channel_id.into(), deleted_message_id.into(), &mut msg).await?;
-
-                        if !log
-                            .iter()
-                            .filter_map(|v| v.message.as_ref())
-                            .any(|v| v.author.bot)
-                        {
-                            if let Some(audit_entry) = audit_entry {
-                                let deleter = audit_entry.user_id.0;
-                                let timestamp = audit_entry.id.created_at().timestamp();
-                                write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
-                            } else {
-                                write!(&mut msg, "\n*Nothing in the audit log matches so likely a self-delete*")?;
-                            }
-
-                            Embed::default()
-                                .flavour(EmbedFlavour::LogDelete)
-                                .description(msg)
-                                .send_in_channel(log_channel_id, &ctx.http)
-                                .await?;
-                        }
-                    }
-                }
-            }
-        }
-        GuildMemberAddition {
-            new_member,
-        } => {
-            let guild_id = new_member.guild_id;     
-            let user = &new_member.user;       
-
-            if let Some((channel_id, embed)) = data.get_greet(guild_id.into(), user).await? {
-                embed
-                    .send_in_channel(channel_id, &ctx.http)
-                    .await?;
-            }
-
-            if let Some(channel_id) = data.log_channel(guild_id.into(), vec![LogChannel::JoiningAndLeaving]).await? {
-                Embed::join()
-                    .description(format!(
-                        "`{}` joined the server.",
-                        user.tag()))
-                    .send_in_channel(channel_id, &ctx.http)
-                    .await?;
-            }
-        }
-        GuildMemberRemoval { guild_id, user, .. } => {
-            if let Some(channel_id) = data.log_channel((*guild_id).into(), vec![LogChannel::JoiningAndLeaving]).await? {
-                // TODO: check audit log for kick status
-                Embed::leave()
-                    .description(format!(
-                        "`{}` left the server.",
-                        user.tag()))
-                    .send_in_channel(channel_id, &ctx.http)
-                    .await?;
-            } 
-        }
-        InteractionCreate { interaction } => {
-            handle_message_component_interaction(ctx, data, interaction).await?;            
-        }
+        GuildCreate { guild, .. } => handle_guild_create(ctx, data, framework, guild).await?,
+        Message { new_message } => handle_message_create(data, new_message).await?,
+        MessageUpdate { old_if_available, new, event } => handle_message_update(data, ctx, event, old_if_available, new).await?,
+        MessageDelete { channel_id, deleted_message_id, guild_id } => handle_message_delete(data, ctx, guild_id, channel_id, deleted_message_id).await?,
+        GuildMemberAddition { new_member } => handle_guild_member_add(data, ctx, new_member).await?,
+        GuildMemberRemoval { guild_id, user, .. } => handle_guild_member_remove(data, ctx, guild_id, user).await?,
+        InteractionCreate { interaction } => handle_message_component_interaction(ctx, data, interaction).await?,
+        VoiceStateUpdate { old, new } => handle_voice_state_update(ctx, data, old, new).await?,
         _ => {}
     }
 
     Ok(())
+}
+
+async fn handle_voice_state_update(ctx: &Context, data: &BotData, old: &Option<VoiceState>, new: &VoiceState) -> anyhow::Result<()> {
+    // Filter out bots
+    if new.member.as_ref().map(|v| v.user.bot).unwrap_or(false) {
+        return Ok(());
+    }
+
+    // Filter out voice DMs (if that's even possible?)
+    let guild_id = match new.guild_id {
+        Some(guild_id) => guild_id,
+        None => return Ok(()),
+    };
+
+    // Exit now if logging isn't configured
+    let log_channel_id = match data.log_channel(guild_id.into(), vec![LogChannel::VoiceActivity]).await? {
+        Some(log_channel_id) => log_channel_id,
+        None => return Ok(()),
+    };
+
+    let old_channel = old
+        .as_ref()
+        .map(|v| v.channel_id)
+        .flatten();
+    let new_channel = new.channel_id;
+    let user_id = new.user_id.0;
+    let timestamp = new.request_to_speak_timestamp.unwrap_or(Utc::now().into()).timestamp();
+
+    let msg = match (old_channel, new_channel) {
+        (Some(o), Some(n)) => format!("<t:{timestamp}>: <@{user_id}> moved from <#{o}> to <#{n}>"),
+        (Some(o), None) => format!("<t:{timestamp}>: <@{user_id}> disconnected <#{o}>"),
+        (None, Some(n)) => format!("<t:{timestamp}>: <@{user_id}> joined <#{n}>"),
+        // I feel like this should be impossible?
+        (None, None) => return Ok(()),        
+    };
+
+    Embed::default()
+        .flavour(EmbedFlavour::LogVoice)
+        .title("VC Update")
+        .description(msg)
+        .send_in_channel(log_channel_id, &ctx.http)
+        .await?;
+    
+    Ok(())
+}
+
+async fn handle_guild_create<'a>(ctx: &Context, data: &BotData, framework: FrameworkContext<'a, BotData, Error>, guild: &Guild) -> anyhow::Result<()> {
+    poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id)
+        .await?;
+    let channel_id = data
+        .general_log_channel(guild.id.into())
+        .await?
+        .or(guild.system_channel_id.map(|v| v.into()))
+        .or(guild
+            .default_channel_guaranteed()
+            .map(|c| c.id)
+            .map(|v| v.into()));
+    if let Some(chan) = channel_id {
+        Embed::default()
+            .title("I'm here")
+            .description(format!("<t:{}>", Utc::now().timestamp()))
+            .send_in_channel(chan, &ctx.http)
+            .await?;
+    } else {
+        warn!("Failed to get log, system or default channels to log to");
+    }
+    tokio::spawn(background_tasks(
+        data.clone(),      
+        ctx.clone(),
+        guild.clone(),
+    ));
+    Ok(())
+}
+
+async fn handle_message_create(data: &BotData, new_message: &Message) -> anyhow::Result<()> {
+    Ok(if let Some(guild_id) = new_message.guild_id {
+        let user_id = new_message.author.id;
+    
+        let channel_id = new_message.channel_id;
+        let message_id = new_message.id;
+
+        data.increment_message_count(guild_id.into(), user_id.into(), channel_id.into())
+            .await?;                
+
+        data.log_message(
+            guild_id.into(), 
+            Some(user_id.into()), 
+            channel_id.into(),
+            message_id.into(),
+            new_message.timestamp,
+            LogType::Create,
+            Some(new_message.clone()),
+        ).await?;
+    })
+}
+
+async fn handle_guild_member_remove(data: &BotData, ctx: &Context, guild_id: &serenity::GuildId, user: &serenity::User) -> anyhow::Result<()> {
+    Ok(if let Some(channel_id) = data.log_channel((*guild_id).into(), vec![LogChannel::JoiningAndLeaving]).await? {
+        // TODO: check audit log for kick status
+        Embed::leave()
+            .description(format!(
+                "`{}` left the server.",
+                user.tag()))
+            .send_in_channel(channel_id, &ctx.http)
+            .await?;
+    })
+}
+
+async fn handle_guild_member_add(data: &BotData, ctx: &Context, new_member: &serenity::Member) -> anyhow::Result<()> {
+    let guild_id = new_member.guild_id;
+    let user = &new_member.user;
+    if let Some((channel_id, embed)) = data.get_greet(guild_id.into(), user).await? {
+        embed
+            .send_in_channel(channel_id, &ctx.http)
+            .await?;
+    }
+    Ok(if let Some(channel_id) = data.log_channel(guild_id.into(), vec![LogChannel::JoiningAndLeaving]).await? {
+        Embed::join()
+            .description(format!(
+                "`{}` joined the server.",
+                user.tag()))
+            .send_in_channel(channel_id, &ctx.http)
+            .await?;
+    })
+}
+
+async fn handle_message_delete(data: &BotData, ctx: &Context, guild_id: &Option<serenity::GuildId>, channel_id: &serenity::ChannelId, deleted_message_id: &serenity::MessageId) -> anyhow::Result<()> {
+    Ok(if let Some(guild_id) = guild_id {                
+        // Log to the log channel only if it is configured
+        if let Some(log_channel_id) = data
+            .log_channel((*guild_id).into(), vec![LogChannel::EditsAndDeletes])
+            .await?
+        {
+            let mut is_bot = false;
+            let mut user_id = None;
+            let mut msg = format!("**Message {deleted_message_id} in <#{channel_id}> deleted**\n");
+            let mut cache_hit = false;
+
+            // This attempts to get it from the cache
+            if let Some(cache) = ctx.cache() {
+                if let Some(message) = cache.message(channel_id, deleted_message_id) {
+                    let content = message_to_string(&message)?
+                        .unwrap_or(" ".to_string())
+                        .replace("\n", "\n> ");
+                    is_bot = message.author.bot;
+                    user_id = Some(message.author.id);
+                    let user_id = message.author.id.0;
+                    let timestamp = message.timestamp.timestamp();
+                    if !is_bot {
+                        write!(&mut msg, "*Message from cache* (<t:{timestamp}> - <@{user_id}>):\n> {}\n\n", content)?;
+                    }
+                    cache_hit = true;
+                } else {
+                    warn!(
+                        "Failed to look up deleted_message_id ({}/{}) from cache for guild {}",
+                        channel_id, deleted_message_id, guild_id
+                    );
+                }
+            }
+
+            if !cache_hit {
+                write!(&mut msg, "*Deleted message was not in the cache.*\n")?;
+            }
+        
+            // Log to the DB, we always do this regardless of config
+            data.log_message(
+                guild_id.into(), 
+                // TODO: Audit log 
+                None, 
+                channel_id.into(),
+                deleted_message_id.into(),
+                // Seems like serenity should provide the timestamp of the event from discord but it doesn't seem to
+                Timestamp::now(),
+                LogType::Delete,
+                None,
+            ).await?;
+
+            // Attempt to get the audit log entry for the delete
+            let mut audit_entry = None;
+            if let Some(guild) = ctx.cache.guild(guild_id) {
+                let audit_log = match guild.audit_logs(
+                    ctx, 
+                    // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
+                    Some(72), 
+                    None, 
+                    None, 
+                    None,
+                ).await {
+                    Err(e) => {
+                        error!("Error getting audit logs: {:?}", e);
+                        None
+                    },
+                    Ok(logs) => Some(logs),
+                };
+
+                if let Some(audit_log) = audit_log {     
+                    if audit_log.entries.len() > 0 {
+                        // We need a user_id as part of the check
+                        if user_id.is_none() {
+                            match data.lookup_user_from_message(
+                                guild_id.into(), 
+                                channel_id.into(), 
+                                deleted_message_id.into(),
+                            ).await {
+                                Ok(user_id_) => user_id = user_id_.map(|v| *v),
+                                Err(e) => error!("Error looking up user_id from message log: {:?}", e),
+                            }
+                        }
+
+                        if let Some(user_id) = user_id {    
+                            audit_entry = audit_log
+                                .entries
+                                .into_iter()
+                                .find(|v| {
+                                    if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
+                                        if target_id == user_id.0 &&
+                                            options.channel_id.as_ref() == Some(channel_id)
+                                        {
+                                            return true
+                                        }
+                                    }
+                                    false
+                                });
+                        } else {
+                            warn!("Couldn't get a user_id for a deleted message");
+                        }
+                    }                       
+                }
+            } else {
+                error!("Failed to get Guild instance from ctx.cache");
+            }
+        
+
+            if !is_bot {
+                let log = log_message_history(data, guild_id.into(), channel_id.into(), deleted_message_id.into(), &mut msg).await?;
+
+                if !log
+                    .iter()
+                    .filter_map(|v| v.message.as_ref())
+                    .any(|v| v.author.bot)
+                {
+                    if let Some(audit_entry) = audit_entry {
+                        let deleter = audit_entry.user_id.0;
+                        let timestamp = audit_entry.id.created_at().timestamp();
+                        write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
+                    } else {
+                        write!(&mut msg, "\n*Nothing in the audit log matches so likely a self-delete*")?;
+                    }
+
+                    Embed::default()
+                        .flavour(EmbedFlavour::LogDelete)
+                        .description(msg)
+                        .send_in_channel(log_channel_id, &ctx.http)
+                        .await?;
+                }
+            }
+        }
+    })
+}
+
+async fn handle_message_update(data: &BotData, ctx: &Context, event: &MessageUpdateEvent, old_if_available: &Option<Message>, new: &Option<Message>) -> anyhow::Result<()> {
+    Ok(if let (Some(guild_id), Some(old), Some(new)) = (event.guild_id, old_if_available, new)
+    {
+        let user = &old.author;
+        if !user.bot && old.content != new.content {
+            if let Some(channel_id) = data
+                .log_channel(guild_id.into(), vec![LogChannel::EditsAndDeletes])
+                .await?
+            {
+                let channel_id_n = channel_id.0;
+                let message_id = new.id.0;
+                let user_id = user.id.0;
+                let before = &old.content;
+                let after = &new.content;
+                let before_timestamp = old.timestamp.timestamp();
+                let after_timestamp = new.timestamp.timestamp();
+                Embed::default()
+                    .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
+                    .flavour(EmbedFlavour::LogEdit)
+                    .send_in_channel(channel_id, &ctx.http)
+                    .await?;
+            }
+        }
+
+        data.log_message(
+            guild_id.into(), 
+            Some(new.author.id.into()), 
+            new.channel_id.into(),
+            new.id.into(),
+            event.edited_timestamp.unwrap_or(Timestamp::now()),
+            LogType::Edit,
+            Some(new.clone()),
+        ).await?;
+    })
 }
 
 fn message_to_string(message: &Message) -> anyhow::Result<Option<String>> {
@@ -781,17 +809,17 @@ async fn log_message_history<'a, T: Write>(
     Ok(log)
 }
 
-async fn handle_message_component_interaction<'a>(ctx: &serenity::Context, data: &'a BotData, interaction: &'a Interaction) -> anyhow::Result<Option<String>> {
+async fn handle_message_component_interaction<'a>(ctx: &serenity::Context, data: &'a BotData, interaction: &'a Interaction) -> anyhow::Result<()> {
     let message_component = if let Interaction::MessageComponent(mc) = interaction {
         mc
     } else {
-        return Ok(None);
+        return Ok(());
     };
 
     if message_component.guild_id.is_none() ||
        message_component.data.component_type != ComponentType::Button 
     {        
-        return Ok(None);
+        return Ok(());
     }
 
     fn split_custom_id(custom_id: Option<&str>) -> anyhow::Result<(String, RoleId)> {
@@ -890,5 +918,5 @@ async fn handle_message_component_interaction<'a>(ctx: &serenity::Context, data:
     )))
     .await?;
 
-    Ok(None)
+    Ok(())
 }

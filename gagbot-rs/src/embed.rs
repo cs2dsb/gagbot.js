@@ -20,6 +20,7 @@ pub enum EmbedFlavour {
     LogDelete,
     LogJoin,
     LogLeave,
+    LogVoice,
 }
 
 impl Into<Color> for EmbedFlavour {
@@ -32,6 +33,7 @@ impl Into<Color> for EmbedFlavour {
             EmbedFlavour::LogDelete => GAGBOT_COLOR_LOG_DELETE,
             EmbedFlavour::LogJoin => GAGBOT_COLOR_LOG_JOIN,
             EmbedFlavour::LogLeave => GAGBOT_COLOR_LOG_LEAVE,
+            EmbedFlavour::LogVoice => GAGBOT_COLOR_NORMAL,
         }
         .into()
     }
