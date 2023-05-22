@@ -12,6 +12,8 @@ mod stats;
 pub use stats::*;
 mod permission;
 pub use permission::*;
+mod promote;
+pub use promote::*;
 
 pub fn commands() -> Vec<Command<BotData, Error>> {
     vec![
@@ -32,5 +34,8 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         purge_permission(),
         test_interaction_roles(),
         get_table_sizes(),
+        get_disk_space(),
+        promote(),
+        config_help(),
     ]
 }

@@ -57,13 +57,27 @@
 // channel.","gagbot:voice:toggleafk",{channel: optional(id)}
 //
 
+use chrono::{Utc, DateTime};
 use clap::Parser;
 use dotenv::dotenv;
 use futures::future::join;
-use gagbot_rs::{config::LogChannel, *, message_log::LogType};
-use poise::{self, FrameworkContext, FrameworkError, serenity_prelude::{self as serenity, ActionRowComponent, CacheHttp, ComponentType, GatewayIntents, Interaction, Timestamp, Message}};
+use gagbot_rs::{config::LogChannel, *, message_log::{LogType, MessageLog}};
+use humansize::{make_format, BINARY};
+use poise::{self, FrameworkContext, FrameworkError, serenity_prelude::{self as serenity, ActionRowComponent, CacheHttp, ComponentType, GatewayIntents, Interaction, Timestamp, Message, Context, Guild}};
+use tokio::time;
 use tracing::*;
-use std::fmt::Write;
+use std::{fmt::Write, time::Duration, num::ParseIntError};
+
+
+fn frequency_seconds_valid_range(s: &str) -> Result<u64, String> {
+    let v = s.parse()
+        .map_err(|e: ParseIntError| e.to_string())?;
+
+    if v < 60 {
+        Err(format!("Running more often than once per minute ({} seconds) is not recommended", v))?;
+    }
+    Ok(v)
+}
 
 #[derive(Debug, Parser)]
 #[clap(name = "gagbot.rs")]
@@ -74,6 +88,8 @@ struct Cli {
     sqlite_connection_string: String,
     #[clap(long, env, default_value = "64")]
     database_command_channel_bound: usize,
+    #[clap(long, env, default_value = "3600", value_parser = frequency_seconds_valid_range)]
+    background_task_frequency_seconds: u64,
 }
 
 #[tokio::main]
@@ -82,13 +98,15 @@ async fn main() -> anyhow::Result<()> {
     configure_tracing();
 
     let args = Cli::parse();
+    let background_task_frequency = Duration::from_secs(args.background_task_frequency_seconds);
     debug!("Parsed args: {:#?}", args);
 
     // Open the DB before launching the task so we can fail before trying to connect
     // to discord
     let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let db_file_path = sqlite_con.path().map(|p| p.to_owned());
     let (sender, receiver) = flume::bounded::<DbCommand>(args.database_command_channel_bound);
-
+    
     let db_task_handle = tokio::spawn(async move {
         debug!("DB TASK: started");
         loop {
@@ -106,6 +124,10 @@ async fn main() -> anyhow::Result<()> {
                             DbCommand::GetConfigI64 { guild_id, key, respond_to } => {
                                 respond_to.send(config::get(&sqlite_con, guild_id, key))
                                     .map_err(|_| anyhow::anyhow!("GetConfigI64 respond_to oneshot closed"))?;
+                            },
+                            DbCommand::GetConfigU64 { guild_id, key, respond_to } => {
+                                respond_to.send(config::get(&sqlite_con, guild_id, key))
+                                    .map_err(|_| anyhow::anyhow!("GetConfigU64 respond_to oneshot closed"))?;
                             },
                             DbCommand::SetConfigString { guild_id, key, value, timestamp, respond_to } => {
                                 respond_to.send(config::update(&sqlite_con, guild_id, key, &value, timestamp))
@@ -159,8 +181,8 @@ async fn main() -> anyhow::Result<()> {
                                 respond_to.send(interaction_roles::update_choice(&sqlite_con, guild_id, set_name, choice, emoji, role_id, timestamp ))
                                     .map_err(|_| anyhow::anyhow!("UpdateInteractionRoleChoice respond_to oneshot closed"))?;
                             },
-                            DbCommand::LogMessage { guild_id, user_id, channel_id, message_id, timestamp, type_, content, respond_to } => {
-                                respond_to.send(message_log::log(&sqlite_con, guild_id, user_id, channel_id, message_id, timestamp, type_, content))
+                            DbCommand::LogMessage { guild_id, user_id, channel_id, message_id, timestamp, type_, message, respond_to } => {
+                                respond_to.send(message_log::log(&sqlite_con, guild_id, user_id, channel_id, message_id, timestamp, type_, message))
                                     .map_err(|_| anyhow::anyhow!("LogMessage respond_to oneshot closed"))?;
                             },
                             DbCommand::GetLogMessages { guild_id, channel_id, message_id, respond_to } => {
@@ -226,14 +248,14 @@ async fn main() -> anyhow::Result<()> {
                 | GatewayIntents::AUTO_MODERATION_CONFIGURATION
                 | GatewayIntents::AUTO_MODERATION_EXECUTION,
         )
-        .setup(|_ctx, _ready, _framework| {
+        .setup(move |_ctx, _ready, _framework| {
             debug!("Discord connected");
-            Box::pin(async move { Ok(BotData::new(sender)) })
+            Box::pin(async move { Ok(BotData::new(sender, db_file_path, background_task_frequency)) })
         })
         .build()
         .await?;
 
-    let shard_manager_handle = framework.client().shard_manager.clone();
+    let shard_manager_handle = framework.client().shard_manager.clone();    
     let (framework_r, db_r) = join(
         // Don't need to do anything special in this case as the dropped sender will cause the db
         // task to stop
@@ -252,6 +274,112 @@ async fn main() -> anyhow::Result<()> {
     framework_r?;
 
     Ok(())
+}
+
+// TODO: make sure result is handled
+async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> anyhow::Result<()> {
+    // Prime the cache. It will be kept up to date after this by events
+    // TODO: This won't fetch more than 1000. If there are that many members
+    //       we should probably not rely on the cache anyway which would mean
+    //       switching the promote functionality to event based
+    let _ = guild.members(&ctx, None, None).await?;
+
+    let formatter = make_format(BINARY);
+    let mut tick_interval = time::interval(data.background_task_frequency);
+    let tick_duration = chrono::Duration::from_std(data.background_task_frequency)?;
+    loop {
+        tokio::select! {
+            _ = tick_interval.tick() => {
+                let next_run: DateTime<Utc> = Utc::now() + tick_duration;
+
+                debug!("Running background tasks");
+
+                let log_channel_id = match data
+                    .general_log_channel(guild.id.into())
+                    .await
+                {
+                    Err(e) => {
+                        error!("Error getting general log channel in background_tasks for guild: {} ({}): {:?}", guild.name, guild.id, e);
+                        continue
+                    },
+                    Ok(None) => continue,
+                    Ok(Some(v)) => v,
+                };
+
+                let mut embed = Embed::default()
+                    .title("Ran background tasks");
+
+                let mut msg = String::new();
+                // 0 = ok, 1 = warn, 2 = error
+                let mut err_lvl = 0;
+
+                match data.db_available_space() {
+                    Ok(bytes) if bytes > DISK_SPACE_WARNING_LEVEL => {
+                        write!(&mut msg, ":white_check_mark: Disk space ok: {}", formatter(bytes))?;
+                    },
+                    Ok(bytes) => {
+                        err_lvl = err_lvl.max(1);
+                        write!(&mut msg, ":x: Disk space low: {}", formatter(bytes))?;
+                    },
+                    Err(e) => {
+                        err_lvl = err_lvl.max(2);
+                        let err = format!(":x: Disk space error: {:?}", e);
+                        error!("Error checking disk space: {}", err);
+                        msg.push_str(&err);
+                    }
+                }
+                msg.push('\n');
+
+                match data.db_table_sizes().await {
+                    Ok(tables) => {
+                        let total = tables.into_iter().fold(0, |a, t| a + t.1);
+                        write!(&mut msg, ":white_check_mark: DB table size total: {}", formatter(total))?;
+                    },
+                    Err(e) => {
+                        err_lvl = err_lvl.max(2);
+                        let err = format!(":x: DB table size error: {:?}", e);
+                        error!("Error getting DB table sizes: {}", err);
+                        msg.push_str(&err);
+                    }
+                }
+                msg.push('\n');
+
+                match run_promote(&data, &ctx, guild.id.into(), None).await {
+                    Ok(PromoteResult::Ok(promotions)) => {
+                        write!(&mut msg, ":white_check_mark: {}", promotions)?;
+                    },
+                    Ok(PromoteResult::Unconfigured(key)) => {
+                        err_lvl = err_lvl.max(1);
+                        write!(&mut msg, ":grey_question: Promote not configured: {}", key)?;
+                    },
+                    Err(e) => {
+                        err_lvl = err_lvl.max(2);
+                        let err = format!(":x: Promote error: {:?}", e);
+                        error!("Error running promotions: {}", err);
+                        msg.push_str(&err);
+                    }
+                }
+                msg.push('\n');
+
+                write!(&mut msg, "\nNext run: <t:{0}:R> (<t:{0}>)", next_run.timestamp())?;
+
+                embed.flavour = Some(match err_lvl {
+                    0 => EmbedFlavour::Success,
+                    1 => EmbedFlavour::Normal,
+                    _ => EmbedFlavour::Error,
+                });
+
+                embed = embed.description(msg);
+
+                if let Err(e) = embed
+                    .send_in_channel(log_channel_id, &ctx.http)
+                    .await 
+                {
+                    error!("Error posting in general log channel in background_tasks for guild: {} ({}): {:?}", guild.name, guild.id, e);
+                }
+            },
+        }
+    }
 }
 
 async fn on_error(error: FrameworkError<'_, BotData, Error>) {
@@ -288,7 +416,6 @@ async fn event_handler<'a>(
     data: &'a BotData,
 ) -> Result<(), Error> {
     use poise::Event::*;
-    let bot_id = framework.bot_id;
 
     debug!("got event: {}", event.name());
     trace!("EVENT VALUE: {:#?}", event);
@@ -313,12 +440,19 @@ async fn event_handler<'a>(
             if let Some(chan) = channel_id {
                 Embed::default()
                     .title("I'm here")
-                    .footer(format!("{}", Timestamp::now().to_rfc2822()))
+                    .description(format!("<t:{}>", Utc::now().timestamp()))
                     .send_in_channel(chan, &ctx.http)
                     .await?;
             } else {
                 warn!("Failed to get log, system or default channels to log to");
             }
+
+            // Launch background tasks for the guild
+            tokio::spawn(background_tasks(
+                data.clone(),      
+                ctx.clone(),
+                guild.clone(),
+            ));
         }
         Message {
             new_message,
@@ -327,23 +461,21 @@ async fn event_handler<'a>(
             if let Some(guild_id) = new_message.guild_id {
                 let user_id = new_message.author.id;
                 
-                if user_id != bot_id {
-                    let channel_id = new_message.channel_id;
-                    let message_id = new_message.id;
+                let channel_id = new_message.channel_id;
+                let message_id = new_message.id;
 
-                    data.increment_message_count(guild_id.into(), user_id.into(), channel_id.into())
-                        .await?;                
+                data.increment_message_count(guild_id.into(), user_id.into(), channel_id.into())
+                    .await?;                
 
-                    data.log_message(
-                        guild_id.into(), 
-                        Some(user_id.into()), 
-                        channel_id.into(),
-                        message_id.into(),
-                        new_message.timestamp,
-                        LogType::Create,
-                        message_to_string(new_message)?,
-                    ).await?;
-                }
+                data.log_message(
+                    guild_id.into(), 
+                    Some(user_id.into()), 
+                    channel_id.into(),
+                    message_id.into(),
+                    new_message.timestamp,
+                    LogType::Create,
+                    Some(new_message.clone()),
+                ).await?;
             }
         }
         MessageUpdate {
@@ -360,12 +492,15 @@ async fn event_handler<'a>(
                         .log_channel(guild_id.into(), vec![LogChannel::EditsAndDeletes])
                         .await?
                     {
+                        let channel_id_n = channel_id.0;
+                        let message_id = new.id.0;
+                        let user_id = user.id.0;
+                        let before = &old.content;
+                        let after = &new.content;
+                        let before_timestamp = old.timestamp.timestamp();
+                        let after_timestamp = new.timestamp.timestamp();
                         Embed::default()
-                            .title(format!("{} edited their message", user.tag()))
-                            .description(format!(
-                                "**Before**\n```\n{}\n```\n**After**\n```\n{}\n```",
-                                old.content, new.content
-                            ))
+                            .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
                             .flavour(EmbedFlavour::LogEdit)
                             .send_in_channel(channel_id, &ctx.http)
                             .await?;
@@ -379,7 +514,7 @@ async fn event_handler<'a>(
                     new.id.into(),
                     event.edited_timestamp.unwrap_or(Timestamp::now()),
                     LogType::Edit,
-                    message_to_string(new)?,
+                    Some(new.clone()),
                 ).await?;
             }
         }
@@ -387,26 +522,32 @@ async fn event_handler<'a>(
             channel_id,
             deleted_message_id,
             guild_id,
-        } => {
-            if let Some(guild_id) = guild_id {
+        } => {            
+            if let Some(guild_id) = guild_id {                
                 // Log to the log channel only if it is configured
                 if let Some(log_channel_id) = data
                     .log_channel((*guild_id).into(), vec![LogChannel::EditsAndDeletes])
                     .await?
                 {
                     let mut is_bot = false;
-                    let mut user = None;
-                    let mut msg = String::new();
+                    let mut user_id = None;
+                    let mut msg = format!("**Message {deleted_message_id} in <#{channel_id}> deleted**\n");
+                    let mut cache_hit = false;
 
                     // This attempts to get it from the cache
                     if let Some(cache) = ctx.cache() {
                         if let Some(message) = cache.message(channel_id, deleted_message_id) {
-                            let content = message_to_string(&message)?.unwrap_or(" ".to_string());
+                            let content = message_to_string(&message)?
+                                .unwrap_or(" ".to_string())
+                                .replace("\n", "\n> ");
                             is_bot = message.author.bot;
-                            user = Some(message.author);
+                            user_id = Some(message.author.id);
+                            let user_id = message.author.id.0;
+                            let timestamp = message.timestamp.timestamp();
                             if !is_bot {
-                                write!(&mut msg, "```\n{}\n```", content)?;
+                                write!(&mut msg, "*Message from cache* (<t:{timestamp}> - <@{user_id}>):\n> {}\n\n", content)?;
                             }
+                            cache_hit = true;
                         } else {
                             warn!(
                                 "Failed to look up deleted_message_id ({}/{}) from cache for guild {}",
@@ -415,25 +556,15 @@ async fn event_handler<'a>(
                         }
                     }
 
-                    if user.is_none() {
-                        match data.lookup_user_from_message(
-                            guild_id.into(), 
-                            channel_id.into(), 
-                            deleted_message_id.into(),
-                        ).await {
-                            Ok(Some(user_id)) => match ctx.http.get_user(user_id.into()).await {
-                                Ok(user_) => user = Some(user_),
-                                Err(e) => error!("Error getting user from user_id {:?} from discord: {:?}", user_id, e),
-                            },
-                            Ok(None) => warn!("Failed to find a user_id for message {} from the message log", deleted_message_id),
-                            Err(e) => error!("Error looking up user_id from message log: {:?}", e),
-                        }
+                    if !cache_hit {
+                        write!(&mut msg, "*Deleted message was not in the cache.*\n")?;
                     }
-
+                    
                     // Log to the DB, we always do this regardless of config
-                    data.log_message::<String>(
+                    data.log_message(
                         guild_id.into(), 
-                        user.as_ref().map(|u| u.id.into()), 
+                        // TODO: Audit log 
+                        None, 
                         channel_id.into(),
                         deleted_message_id.into(),
                         // Seems like serenity should provide the timestamp of the event from discord but it doesn't seem to
@@ -442,19 +573,84 @@ async fn event_handler<'a>(
                         None,
                     ).await?;
 
-                    if !is_bot {
-                        log_message_history(data, guild_id.into(), channel_id.into(), deleted_message_id.into(), &mut msg).await?;
+                    // Attempt to get the audit log entry for the delete
+                    let mut audit_entry = None;
+                    if let Some(guild) = ctx.cache.guild(guild_id) {
+                        let audit_log = match guild.audit_logs(
+                            ctx, 
+                            // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
+                            Some(72), 
+                            None, 
+                            None, 
+                            None,
+                        ).await {
+                            Err(e) => {
+                                error!("Error getting audit logs: {:?}", e);
+                                None
+                            },
+                            Ok(logs) => Some(logs),
+                        };
 
-                        Embed::default()
-                            .flavour(EmbedFlavour::LogDelete)
-                            .description(msg)
-                            .title(if let Some(user) = user {
-                                format!("Message from {} was deleted", user.tag())
+                        if let Some(audit_log) = audit_log {     
+                            if audit_log.entries.len() > 0 {
+                                // We need a user_id as part of the check
+                                if user_id.is_none() {
+                                    match data.lookup_user_from_message(
+                                        guild_id.into(), 
+                                        channel_id.into(), 
+                                        deleted_message_id.into(),
+                                    ).await {
+                                        Ok(user_id_) => user_id = user_id_.map(|v| *v),
+                                        Err(e) => error!("Error looking up user_id from message log: {:?}", e),
+                                    }
+                                }
+
+                                if let Some(user_id) = user_id {    
+                                    audit_entry = audit_log
+                                        .entries
+                                        .into_iter()
+                                        .find(|v| {
+                                            if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
+                                                if target_id == user_id.0 &&
+                                                    options.channel_id.as_ref() == Some(channel_id)
+                                                {
+                                                    return true
+                                                }
+                                            }
+                                            false
+                                        });
+                                } else {
+                                    warn!("Couldn't get a user_id for a deleted message");
+                                }
+                            }                       
+                        }
+                    } else {
+                        error!("Failed to get Guild instance from ctx.cache");
+                    }
+                    
+
+                    if !is_bot {
+                        let log = log_message_history(data, guild_id.into(), channel_id.into(), deleted_message_id.into(), &mut msg).await?;
+
+                        if !log
+                            .iter()
+                            .filter_map(|v| v.message.as_ref())
+                            .any(|v| v.author.bot)
+                        {
+                            if let Some(audit_entry) = audit_entry {
+                                let deleter = audit_entry.user_id.0;
+                                let timestamp = audit_entry.id.created_at().timestamp();
+                                write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
                             } else {
-                                "Message was deleted (Original user data is unknown)".to_string()
-                            })
-                            .send_in_channel(log_channel_id, &ctx.http)
-                            .await?;
+                                write!(&mut msg, "\n*Nothing in the audit log matches so likely a self-delete*")?;
+                            }
+
+                            Embed::default()
+                                .flavour(EmbedFlavour::LogDelete)
+                                .description(msg)
+                                .send_in_channel(log_channel_id, &ctx.http)
+                                .await?;
+                        }
                     }
                 }
             }
@@ -504,27 +700,31 @@ fn message_to_string(message: &Message) -> anyhow::Result<Option<String>> {
     let mut content = message.content.clone();
 
     for e in message.embeds.iter() {
-        content.push_str("Embed {\n");
+        if content.len() > 0 {
+            content.push('\n');
+        }
+        content.push_str("**Embed**\n");
         if let Some(v) = e.title.as_ref() {
-            write!(&mut content, "\ttitle: \"{v}\",\n")?;
+            write!(&mut content, "*{v}*\n")?;
         }
         if let Some(v) = e.description.as_ref() {
-            write!(&mut content, "\tdescription: \"{v}\",\n")?;
+            write!(&mut content, "{v}")?;
         }
-        content.push_str("}\n");
     }
 
     for a in message.attachments.iter() {
-        content.push_str("Attachment {\n");
-        write!(&mut content, "\tfilename: \"{}\",\n", a.filename)?;        
+        if content.len() > 0 {
+            content.push('\n');
+        }
+        content.push_str("**Attachment**\n");
+        write!(&mut content, "*{}*\n", a.filename)?;        
         if let Some(v) = a.content_type.as_ref() {
-            write!(&mut content, "\tcontent_type: \"{v}\",\n")?;
+            write!(&mut content, "{v}\n")?;
         }        
-        write!(&mut content, "\turl: \"{}\",\n", a.url)?;        
-        content.push_str("}\n");
+        write!(&mut content, "{}", a.url)?;        
     }    
 
-    let content = if content.len() > 0 {
+    let content = if content.len() > 0 {        
         Some(content)
     } else {
         debug!("message_to_string empty message: {:#?}", message);
@@ -534,35 +734,51 @@ fn message_to_string(message: &Message) -> anyhow::Result<Option<String>> {
     Ok(content)
 }
 
-async fn log_message_history<'a, T: Write>(data: &'a BotData, guild_id: GuildId, channel_id: ChannelId, message_id: MessageId, mut w: T) -> anyhow::Result<()> {
+/// Logs the message history to the provided writer. Also returns the log in case it can be of futher use
+async fn log_message_history<'a, T: Write>(
+    data: &'a BotData, 
+    guild_id: GuildId, 
+    channel_id: ChannelId, 
+    message_id: MessageId, 
+    mut w: T,
+) -> anyhow::Result<Vec<MessageLog>> {
     let log = data.get_message_log(guild_id, channel_id, message_id).await?;
     let log_len = log.len();
     if log_len > 0 {
-        write!(w, "\nBot recorded message history:\n```")?;     
+        write!(w, "*Bot recorded message history:*\n")?;     
     }
 
-    for entry in log {        
+    for entry in log.iter() {        
         let prefix = match entry.type_ {
             LogType::Create => "Create",
             LogType::Edit => "Edit",
             LogType::Delete => "Delete",
         };
 
-        let timestamp = entry.timestamp;
+        let timestamp = entry.timestamp.timestamp();
         let content = entry
-            .content
-            .unwrap_or_default()
-            .replace("\n", "\n\t");
-        let user_id = entry.user_id.map_or("<Unknown>".to_string(), |v| v.to_string());
+            .message
+            .as_ref()
+            .map(|v| message_to_string(v))
+            .transpose()?
+            .flatten()
+            .map(|v| v.replace("\n", "\n> "));
 
-        write!(w, "{prefix} {{\n\ttimestamp: {timestamp}\n\tuser_id: <@{user_id}>\n\tcontent: {content}\n}}\n")?;
+        let user_id = entry.user_id
+            .map(|v| v.0);
+
+        write!(w, "<t:{timestamp}>:  **{prefix}**")?;
+        if let Some(user_id) = user_id {
+            write!(w, " (<@{user_id}>)")?;
+        }
+        if let Some(content) = content {
+            write!(w, ":\n> {content}\n")?;
+        } else {
+            write!(w, "\n")?;
+        }
     }
 
-    if log_len > 0 {
-        write!(w, "```")?;
-    }
-
-    Ok(())
+    Ok(log)
 }
 
 async fn handle_message_component_interaction<'a>(ctx: &serenity::Context, data: &'a BotData, interaction: &'a Interaction) -> anyhow::Result<Option<String>> {

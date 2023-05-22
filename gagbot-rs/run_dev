@@ -9,6 +9,8 @@ set -o nounset
 # Exit when a piped command returns a non-zero exit code
 set -o pipefail
 
+# set -x
+
 readonly bin="${bin:-main}"
 readonly level=debug
 
@@ -20,9 +22,10 @@ readonly node_bin_path="${node_dir}/bin/node"
 
 cd "$repo_dir"
 (cd ..; ./run_mongo &)
+
 RUST_LOG=gagbot_rs=$level,$bin=$level,serenity=info,poise=info \
     cargo watch \
-        -i \*.sqlite\* \
-        -i \*.log\* \
-        -x "run --bin $bin"
+        -i '*.sqlite*' \
+        -i '*.log*' \
+        -x "run --bin $bin -- $*"
 #RUST_LOG=debug cargo watch -x run

@@ -1,4 +1,4 @@
-use poise::serenity_prelude::{ Timestamp };
+use poise::serenity_prelude::{ Timestamp, Message };
 use rusqlite::Connection;
 use tokio::sync::oneshot;
 
@@ -19,6 +19,11 @@ pub enum DbCommand {
         guild_id: GuildId,
         key: ConfigKey,
         respond_to: oneshot::Sender<anyhow::Result<Option<i64>>>,
+    },
+    GetConfigU64 {
+        guild_id: GuildId,
+        key: ConfigKey,
+        respond_to: oneshot::Sender<anyhow::Result<Option<u64>>>,
     },
     SetConfigString {
         guild_id: GuildId,
@@ -105,7 +110,7 @@ pub enum DbCommand {
         message_id: MessageId,
         timestamp: Timestamp,
         type_: LogType,
-        content: Option<String>,
+        message: Option<Message>,
         respond_to: oneshot::Sender<anyhow::Result<()>>,
     },
     GetLogMessages {

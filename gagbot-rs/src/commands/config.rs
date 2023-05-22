@@ -1,4 +1,6 @@
-use poise::{self, serenity_prelude::ChannelId};
+use std::str::FromStr;
+use std::fmt::Write;
+use poise::{self, serenity_prelude::ChannelId, SlashArgument};
 use tokio::sync::oneshot;
 
 use crate::{Context, DbCommand, Embed, Error, config::ConfigKey, permissions::{Permission, PermissionCheck}};
@@ -87,11 +89,11 @@ pub async fn set_config(
 }
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Config")]
-/// Set all log config keys to the provided value
+/// Set all logging types to a single provided channel
 pub async fn set_log(
     ctx: Context<'_>,
 
-    #[description = "The value you want to change it to"] value: ChannelId,
+    #[description = "The channel you want all logs to go to"] channel: ChannelId,
 ) -> Result<(), Error> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
@@ -107,7 +109,7 @@ pub async fn set_log(
             guild_id.into(),
             *key,
             timestamp,
-            value.to_string(),
+            channel.to_string(),
         ).await;
         if msg.len() > 0 {
             msg.push('\n');
@@ -167,6 +169,40 @@ pub async fn delete_config(
         .set_error(err)
         .send(&ctx)
         .await?;
+
+    Ok(())
+}
+#[poise::command(prefix_command, slash_command, guild_only, category = "Config")]
+/// Get help on config flags
+pub async fn config_help(
+    ctx: Context<'_>,
+
+    #[description = "The config key you want help with"] key: Option<ConfigKey>,
+) -> Result<(), Error> {
+    ctx.require_permission(Permission::ConfigManage).await?;
+
+    let mut keys = Vec::new();
+
+    if let Some(key) = key {
+        keys.push(key);
+    } else {
+        for choice in ConfigKey::choices() {
+            keys.push(ConfigKey::from_str(&choice.name)?)
+        }
+    }
+
+    let mut msg = String::new();
+    for keys in keys {
+        write!(&mut msg, "**{}**\n", keys.name())?;
+        write!(&mut msg, "{}\n\n", keys.description())?;
+    }
+
+    Embed::success()
+        .title("Config help")
+        .description(msg)
+        .send(&ctx)
+        .await?;
+
 
     Ok(())
 }

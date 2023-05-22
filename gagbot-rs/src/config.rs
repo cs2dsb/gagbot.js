@@ -33,8 +33,6 @@ pub enum ConfigKey {
     PromoteJuniorChatMinMessages,
     #[name = "promote.junior_min_age"]
     PromoteJuniorMinAge,
-    #[name = "promote.new_message_max_age"]
-    PromoteNewMessageMaxAge,
     #[name = "logging.general"]
     LoggingGeneral,
     #[name = "logging.edits_and_deletes"]
@@ -56,6 +54,28 @@ impl ConfigKey {
             ConfigKey::LoggingErrors,
             ConfigKey::LoggingVoiceActivity,
         ]
+    }
+    
+    pub fn description(&self) -> &'static str {
+        match self {
+            ConfigKey::GreetMessage => "Message template bot posts to new members. Use {tag}, {name} and {discriminator} to refer to the new member",
+            ConfigKey::GreetChannel => "Channel to post the greeting in",
+            ConfigKey::GreetWelcomeMessage => "Message to post in welcome channel after new member has been approved by a mod",
+            ConfigKey::GreetWelcomeChannel => "Channel to post welcome in",
+            ConfigKey::LoggingGeneral => "Channel to log general bot messages in",
+            ConfigKey::LoggingEditsAndDeletes => "Channel to log message edits and deletes in",
+            ConfigKey::LoggingJoiningAndLeaving => "Channel to log join and leave events in",
+            ConfigKey::LoggingErrors => "Channel to log bot errors in",
+            ConfigKey::LoggingVoiceActivity => "Channel to log member voice activity in",
+            ConfigKey::GreetRole => "Role given by a mod as part of the add member process",
+            ConfigKey::PromoteJuniorRole => "Role given once an introduction has been done",
+            ConfigKey::PromoteFullRole => "Role given after a certain time has passed and number of messages are posted",
+            ConfigKey::PromoteNewChatChannel => "Channel new members must post their introduction in",
+            ConfigKey::PromoteJuniorChatChannel => "Channel juniors have to be active in",
+            ConfigKey::PromoteNewChatMinMessages => "How many messages new members have to post in into channel",
+            ConfigKey::PromoteJuniorChatMinMessages => "How many messages juniors have to post to show they are active",
+            ConfigKey::PromoteJuniorMinAge => "How long (in days) juniors have to stick around to be promoted",
+        }
     }
 }
 

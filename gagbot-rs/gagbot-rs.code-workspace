@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": ".."
+		},
+		{
+			"path": "../../../rust/tornt.rs"
+		},
+		{
+			"path": "../../../../.cargo/registry/src/github.com-1ecc6299db9ec823/serenity-0.11.5"
 		}
 	],
 	"settings": {}

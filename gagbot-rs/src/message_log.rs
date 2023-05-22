@@ -1,4 +1,4 @@
-use poise::serenity_prelude::{Timestamp};
+use poise::serenity_prelude::{Timestamp, Message};
 use rusqlite::{params, Connection, ToSql, types::{ToSqlOutput, FromSql, FromSqlError, ValueRef, FromSqlResult}, OptionalExtension};
 use tracing::error;
 use std::str;
@@ -20,7 +20,7 @@ pub struct MessageLog {
     pub message_id: MessageId,
     pub timestamp: Timestamp,
     pub type_: LogType,
-    pub content: Option<String>,
+    pub message: Option<Message>,
 }
 
 impl ToSql for LogType {
@@ -60,14 +60,19 @@ pub fn log(
     message_id: MessageId,
     timestamp: Timestamp,
     type_: LogType,
-    content: Option<String>,
+    message: Option<Message>,
 ) -> anyhow::Result<()> {
+
+    let json = message
+        .map(|v| serde_json::to_value(v))
+        .transpose()?;
+
     let mut stmt = db.prepare_cached(
-        "INSERT INTO message_log (guild_id, user_id, channel_id, message_id, timestamp, type, content)
+        "INSERT INTO message_log (guild_id, user_id, channel_id, message_id, timestamp, type, message_json)
         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
 
-    stmt.execute(params![guild_id, user_id, channel_id, message_id, &timestamp.to_rfc3339(), type_, content])?;
+    stmt.execute(params![guild_id, user_id, channel_id, message_id, &timestamp.to_rfc3339(), type_, json])?;
 
     Ok(())
 }
@@ -79,7 +84,7 @@ pub fn get(
     message_id: MessageId,
 ) -> anyhow::Result<Vec<MessageLog>> {
     let mut stmt = db.prepare_cached(
-        "SELECT guild_id, user_id, channel_id, message_id, timestamp, type, content FROM message_log
+        "SELECT guild_id, user_id, channel_id, message_id, timestamp, type, message_json FROM message_log
         WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3
         ORDER BY timestamp DESC",
     )?;
@@ -93,7 +98,10 @@ pub fn get(
             message_id: MessageId::from(r.get::<_, u64>(3)?),
             timestamp: Timestamp::from(r.get::<_, String>(4)?),
             type_: r.get(5)?,
-            content: r.get(6)?,
+            message: r.get::<_, Option<serde_json::Value>>(6)?
+                .map(|v| serde_json::from_value(v))
+                .transpose()
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?,
         }))?.collect::<Result<_, _>>()?;
 
     Ok(r)

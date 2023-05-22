@@ -304,13 +304,6 @@ async fn main() -> anyhow::Result<()> {
                 .as_ref()
                 .map(|v| v.junior_min_age.map(|v| format!("{}", v)))
                 .flatten();
-            let new_message_max_age = guild
-                .data
-                .promote_rules
-                .as_ref()
-                .map(|v| v.new_message_max_age.map(|v| format!("{}", v)))
-                .flatten();
-
             let junior_role = guild
                 .data
                 .promote_roles
@@ -335,7 +328,6 @@ async fn main() -> anyhow::Result<()> {
                     junior_chat_min_messages,
                 ),
                 (ConfigKey::PromoteJuniorMinAge, junior_min_age),
-                (ConfigKey::PromoteNewMessageMaxAge, new_message_max_age),
             ];
 
             let mut config_stmt = tx.prepare_cached(

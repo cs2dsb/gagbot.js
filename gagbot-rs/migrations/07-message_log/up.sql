@@ -9,5 +9,5 @@ CREATE TABLE message_log (
     type TEXT NOT NULL
         CHECK(type IN ('CREATE', 'EDIT', 'DELETE')),
 
-    content TEXT
+    message_json TEXT
 ) STRICT;
