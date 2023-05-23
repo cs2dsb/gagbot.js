@@ -37,5 +37,6 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         get_disk_space(),
         promote(),
         config_help(),
+        purge(),
     ]
 }

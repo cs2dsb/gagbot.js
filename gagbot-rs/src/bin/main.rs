@@ -419,7 +419,8 @@ async fn event_handler<'a>(
         GuildCreate { guild, .. } => handle_guild_create(ctx, data, framework, guild).await?,
         Message { new_message } => handle_message_create(data, new_message).await?,
         MessageUpdate { old_if_available, new, event } => handle_message_update(data, ctx, event, old_if_available, new).await?,
-        MessageDelete { channel_id, deleted_message_id, guild_id } => handle_message_delete(data, ctx, guild_id, channel_id, deleted_message_id).await?,
+        MessageDelete { channel_id, deleted_message_id, guild_id } => handle_message_delete(data, ctx, guild_id, channel_id, &vec![*deleted_message_id], false).await?,
+        MessageDeleteBulk { channel_id, multiple_deleted_messages_ids, guild_id } => handle_message_delete(data, ctx, guild_id, channel_id, multiple_deleted_messages_ids, true).await?,
         GuildMemberAddition { new_member } => handle_guild_member_add(data, ctx, new_member).await?,
         GuildMemberRemoval { guild_id, user, .. } => handle_guild_member_remove(data, ctx, guild_id, user).await?,
         InteractionCreate { interaction } => handle_message_component_interaction(ctx, data, interaction).await?,
@@ -554,138 +555,166 @@ async fn handle_guild_member_add(data: &BotData, ctx: &Context, new_member: &ser
     })
 }
 
-async fn handle_message_delete(data: &BotData, ctx: &Context, guild_id: &Option<serenity::GuildId>, channel_id: &serenity::ChannelId, deleted_message_id: &serenity::MessageId) -> anyhow::Result<()> {
-    Ok(if let Some(guild_id) = guild_id {                
-        // Log to the log channel only if it is configured
-        if let Some(log_channel_id) = data
-            .log_channel((*guild_id).into(), vec![LogChannel::EditsAndDeletes])
-            .await?
-        {
-            let mut is_bot = false;
-            let mut user_id = None;
-            let mut msg = format!("**Message {deleted_message_id} in <#{channel_id}> deleted**\n");
-            let mut cache_hit = false;
+async fn handle_message_delete(
+    data: &BotData, 
+    ctx: &Context, 
+    guild_id: &Option<serenity::GuildId>, 
+    channel_id: &serenity::ChannelId, 
+    deleted_message_ids: &Vec<serenity::MessageId>,
+    bulk_delete: bool,
+) -> anyhow::Result<()> {   
+    // Only care to log stuff inside the guild 
+    let guild_id = match guild_id {
+        Some(guild_id) => guild_id,
+        None => return Ok(()),
+    };
+    
+    // Log to the DB, we always do this regardless of config
+    let now = Timestamp::now();
+    for deleted_message_id in deleted_message_ids.iter() {
+        data.log_message(
+            guild_id.into(), 
+            None, 
+            channel_id.into(),
+            deleted_message_id.into(),
+            // Seems like serenity should provide the timestamp of the event from discord but it doesn't seem to
+            now,
+            LogType::Delete,
+            None,
+        ).await?;
+    }
 
-            // This attempts to get it from the cache
-            if let Some(cache) = ctx.cache() {
-                if let Some(message) = cache.message(channel_id, deleted_message_id) {
-                    let content = message_to_string(&message)?
-                        .unwrap_or(" ".to_string())
-                        .replace("\n", "\n> ");
-                    is_bot = message.author.bot;
-                    user_id = Some(message.author.id);
-                    let user_id = message.author.id.0;
-                    let timestamp = message.timestamp.timestamp();
-                    if !is_bot {
-                        write!(&mut msg, "*Message from cache* (<t:{timestamp}> - <@{user_id}>):\n> {}\n\n", content)?;
-                    }
-                    cache_hit = true;
-                } else {
-                    warn!(
-                        "Failed to look up deleted_message_id ({}/{}) from cache for guild {}",
-                        channel_id, deleted_message_id, guild_id
-                    );
-                }
-            }
+    // Exit now if log channel isn't configured
+    let log_channel_id = match data.log_channel((*guild_id).into(), vec![LogChannel::EditsAndDeletes]).await? {
+        Some(log_channel_id) => log_channel_id,
+        None => return Ok(()),
+    };
 
-            if !cache_hit {
-                write!(&mut msg, "*Deleted message was not in the cache.*\n")?;
-            }
+    // Attempt to get the audit log containing the delete
+    let audit_log = if let Some(guild) = ctx.cache.guild(guild_id) {
+        // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
+        let action_type = if bulk_delete {
+            72
+        } else {
+            73
+        };
+        match guild.audit_logs(
+            ctx, 
+            Some(action_type), 
+            None, 
+            None, 
+            None,
+        ).await {
+            Err(e) => {
+                error!("Error getting audit logs: {:?}", e);
+                None
+            },
+            Ok(logs) => Some(logs),
+        }
+    } else {
+        error!("Failed to get Guild instance from ctx.cache");
+        None
+    };
         
-            // Log to the DB, we always do this regardless of config
-            data.log_message(
-                guild_id.into(), 
-                // TODO: Audit log 
-                None, 
-                channel_id.into(),
-                deleted_message_id.into(),
-                // Seems like serenity should provide the timestamp of the event from discord but it doesn't seem to
-                Timestamp::now(),
-                LogType::Delete,
-                None,
-            ).await?;
+    
+    for deleted_message_id in deleted_message_ids.iter() {    
+        let mut is_bot = false;
+        let mut user_id = None;
+        let mut msg = format!("**Message {deleted_message_id} in <#{channel_id}> deleted**\n");
+        let mut cache_hit = false;
 
-            // Attempt to get the audit log entry for the delete
-            let mut audit_entry = None;
-            if let Some(guild) = ctx.cache.guild(guild_id) {
-                let audit_log = match guild.audit_logs(
-                    ctx, 
-                    // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
-                    Some(72), 
-                    None, 
-                    None, 
-                    None,
-                ).await {
-                    Err(e) => {
-                        error!("Error getting audit logs: {:?}", e);
-                        None
-                    },
-                    Ok(logs) => Some(logs),
-                };
-
-                if let Some(audit_log) = audit_log {     
-                    if audit_log.entries.len() > 0 {
-                        // We need a user_id as part of the check
-                        if user_id.is_none() {
-                            match data.lookup_user_from_message(
-                                guild_id.into(), 
-                                channel_id.into(), 
-                                deleted_message_id.into(),
-                            ).await {
-                                Ok(user_id_) => user_id = user_id_.map(|v| *v),
-                                Err(e) => error!("Error looking up user_id from message log: {:?}", e),
-                            }
-                        }
-
-                        if let Some(user_id) = user_id {    
-                            audit_entry = audit_log
-                                .entries
-                                .into_iter()
-                                .find(|v| {
-                                    if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
-                                        if target_id == user_id.0 &&
-                                            options.channel_id.as_ref() == Some(channel_id)
-                                        {
-                                            return true
-                                        }
-                                    }
-                                    false
-                                });
-                        } else {
-                            warn!("Couldn't get a user_id for a deleted message");
-                        }
-                    }                       
+        // Attempt to get it from the cache
+        if let Some(cache) = ctx.cache() {
+            if let Some(message) = cache.message(channel_id, deleted_message_id) {
+                let content = message_to_string(&message)?
+                    .unwrap_or(" ".to_string())
+                    .replace("\n", "\n> ");
+                is_bot = message.author.bot;
+                user_id = Some(message.author.id);
+                let user_id = message.author.id.0;
+                let timestamp = message.timestamp.timestamp();
+                if !is_bot {
+                    write!(&mut msg, "*Message from cache* (<t:{timestamp}> - <@{user_id}>):\n> {}\n\n", content)?;
                 }
+                cache_hit = true;
             } else {
-                error!("Failed to get Guild instance from ctx.cache");
-            }
-        
-
-            if !is_bot {
-                let log = log_message_history(data, guild_id.into(), channel_id.into(), deleted_message_id.into(), &mut msg).await?;
-
-                if !log
-                    .iter()
-                    .filter_map(|v| v.message.as_ref())
-                    .any(|v| v.author.bot)
-                {
-                    if let Some(audit_entry) = audit_entry {
-                        let deleter = audit_entry.user_id.0;
-                        let timestamp = audit_entry.id.created_at().timestamp();
-                        write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
-                    } else {
-                        write!(&mut msg, "\n*Nothing in the audit log matches so likely a self-delete*")?;
-                    }
-
-                    Embed::default()
-                        .flavour(EmbedFlavour::LogDelete)
-                        .description(msg)
-                        .send_in_channel(log_channel_id, &ctx.http)
-                        .await?;
-                }
+                trace!(
+                    "Failed to look up deleted_message_id ({}/{}) from cache for guild {}",
+                    channel_id, deleted_message_id, guild_id
+                );
             }
         }
-    })
+
+        if !cache_hit {
+            write!(&mut msg, "*Deleted message was not in the cache.*\n")?;
+        }
+    
+        // Attempt to get the audit log entry for the delete
+        let mut audit_entry = None;    
+        if let Some(audit_log) = audit_log.as_ref() {     
+            if audit_log.entries.len() > 0 {
+                // We need a user_id as part of the check
+                if user_id.is_none() {
+                    match data.lookup_user_from_message(
+                        guild_id.into(), 
+                        channel_id.into(), 
+                        deleted_message_id.into(),
+                    ).await {
+                        Ok(user_id_) => user_id = user_id_.map(|v| *v),
+                        Err(e) => error!("Error looking up user_id from message log: {:?}", e),
+                    }
+                }
+                if let Some(user_id) = user_id {    
+                    audit_entry = audit_log
+                        .entries
+                        .iter()
+                        .find(|v| {
+                            if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
+                                if bulk_delete {
+                                    // TODO: This basically never works. Not sure it's even possible
+                                    if target_id == channel_id.0 && options.count == Some(deleted_message_ids.len() as u64) {                                        
+                                        return true;
+                                    }
+                                } else {
+                                    if target_id == user_id.0 && options.channel_id.as_ref() == Some(channel_id) {
+                                        return true
+                                    }
+                                }
+                            }
+                            false
+                        });
+                } else {
+                    warn!("Couldn't get a user_id for a deleted message");
+                }
+            }                       
+        }
+    
+        if !is_bot {
+            let log = log_message_history(data, guild_id.into(), channel_id.into(), deleted_message_id.into(), &mut msg).await?;
+
+            if !log
+                .iter()
+                .filter_map(|v| v.message.as_ref())
+                .any(|v| v.author.bot)
+            {
+                if let Some(audit_entry) = audit_entry {
+                    let deleter = audit_entry.user_id.0;
+                    let timestamp = audit_entry.id.created_at().timestamp();
+                    write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
+                } else {
+                    write!(&mut msg, "\n*Nothing in the audit log matches (but it isn't a reliable check :person_shrugging:)*")?;
+                }
+
+                Embed::default()
+                    .flavour(EmbedFlavour::LogDelete)
+                    .description(msg)
+                    .send_in_channel(log_channel_id, &ctx.http)
+                    .await?;
+            }
+        }
+    }    
+
+    Ok(())
 }
 
 async fn handle_message_update(data: &BotData, ctx: &Context, event: &MessageUpdateEvent, old_if_available: &Option<Message>, new: &Option<Message>) -> anyhow::Result<()> {

@@ -327,8 +327,13 @@ where
             },
         }
     }
-    update_embed!(None, EmbedFlavour::Success);
 
     // We only exit above loop once result is Some
-    work_result.unwrap()
+    let r = work_result.unwrap();
+    
+    if r.is_ok() {
+        update_embed!(None, EmbedFlavour::Success);
+    }
+
+    r
 }

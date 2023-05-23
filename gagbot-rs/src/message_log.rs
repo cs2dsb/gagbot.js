@@ -1,11 +1,11 @@
 use poise::serenity_prelude::{Timestamp, Message};
 use rusqlite::{params, Connection, ToSql, types::{ToSqlOutput, FromSql, FromSqlError, ValueRef, FromSqlResult}, OptionalExtension};
-use tracing::error;
+use tracing::{error};
 use std::str;
 use crate::{ChannelId, GuildId, UserId, MessageId};
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum LogType {
     Create,
     Edit,
@@ -62,6 +62,17 @@ pub fn log(
     type_: LogType,
     message: Option<Message>,
 ) -> anyhow::Result<()> {
+    // TODO: This is kinda magic behaviour
+    if type_ == LogType::Delete {
+        if db.prepare_cached(
+            "SELECT 1 FROM message_log
+            WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3 AND type = ?4
+            LIMIT 1"
+        )?
+        .exists(params![guild_id, channel_id, message_id, type_])? {
+            return Ok(());
+        }        
+    }
 
     let json = message
         .map(|v| serde_json::to_value(v))
@@ -116,8 +127,7 @@ pub fn get_user(
     let mut stmt = db.prepare_cached(
         "SELECT user_id FROM message_log
         WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3 AND user_id IS NOT NULL
-        LIMIT 1
-        ORDER BY timestamp DESC",
+        ORDER BY timestamp DESC LIMIT 1",
     )?;
 
     let r = stmt
