@@ -1,15 +1,22 @@
-use poise::serenity_prelude::{Timestamp, Message};
-use rusqlite::{params, Connection, ToSql, types::{ToSqlOutput, FromSql, FromSqlError, ValueRef, FromSqlResult}, OptionalExtension};
-use tracing::{error};
 use std::str;
-use crate::{ChannelId, GuildId, UserId, MessageId};
 
+use poise::serenity_prelude::{Message, Timestamp};
+use rusqlite::{
+    params,
+    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
+    Connection, OptionalExtension, ToSql,
+};
+use tracing::error;
+
+use crate::{ChannelId, GuildId, MessageId, UserId};
 
 #[derive(Debug, PartialEq)]
 pub enum LogType {
     Create,
     Edit,
     Delete,
+    // Purge is the same as delete but exists so the log printed in discord is clear
+    Purge,
 }
 
 #[derive(Debug)]
@@ -29,6 +36,7 @@ impl ToSql for LogType {
             LogType::Create => ToSqlOutput::Borrowed("CREATE".into()),
             LogType::Edit => ToSqlOutput::Borrowed("EDIT".into()),
             LogType::Delete => ToSqlOutput::Borrowed("DELETE".into()),
+            LogType::Purge => ToSqlOutput::Borrowed("PURGE".into()),
         })
     }
 }
@@ -40,17 +48,17 @@ impl FromSql for LogType {
                 "CREATE" => Ok(LogType::Create),
                 "EDIT" => Ok(LogType::Edit),
                 "DELETE" => Ok(LogType::Delete),
+                "PURGE" => Ok(LogType::Purge),
                 e => {
                     error!("Unexpected enum variant {} for LogType", e);
                     Err(FromSqlError::InvalidType)
-                },
+                }
             }
         } else {
             Err(FromSqlError::InvalidType)
         }
     }
 }
-
 
 pub fn log(
     db: &Connection,
@@ -64,26 +72,40 @@ pub fn log(
 ) -> anyhow::Result<()> {
     // TODO: This is kinda magic behaviour
     if type_ == LogType::Delete {
-        if db.prepare_cached(
-            "SELECT 1 FROM message_log
-            WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3 AND type = ?4
-            LIMIT 1"
-        )?
-        .exists(params![guild_id, channel_id, message_id, type_])? {
+        if db
+            .prepare_cached(
+                "SELECT 1 FROM message_log
+            WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3 AND type IN (?4, ?5)
+            LIMIT 1",
+            )?
+            .exists(params![
+                guild_id,
+                channel_id,
+                message_id,
+                LogType::Delete,
+                LogType::Purge
+            ])?
+        {
             return Ok(());
-        }        
+        }
     }
 
-    let json = message
-        .map(|v| serde_json::to_value(v))
-        .transpose()?;
+    let json = message.map(|v| serde_json::to_value(v)).transpose()?;
 
     let mut stmt = db.prepare_cached(
         "INSERT INTO message_log (guild_id, user_id, channel_id, message_id, timestamp, type, message_json)
         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
 
-    stmt.execute(params![guild_id, user_id, channel_id, message_id, &timestamp.to_rfc3339(), type_, json])?;
+    stmt.execute(params![
+        guild_id,
+        user_id,
+        channel_id,
+        message_id,
+        &timestamp.to_rfc3339(),
+        type_,
+        json
+    ])?;
 
     Ok(())
 }
@@ -100,20 +122,29 @@ pub fn get(
         ORDER BY timestamp DESC",
     )?;
 
-    let r = stmt.query_map(
-        params![guild_id, channel_id, message_id],
-        |r| Ok(MessageLog {
-            guild_id: GuildId::from(r.get::<_, u64>(0)?),
-            user_id: r.get::<_, Option<u64>>(1)?.map(|v| UserId::from(v)),
-            channel_id: r.get(2)?,
-            message_id: MessageId::from(r.get::<_, u64>(3)?),
-            timestamp: Timestamp::from(r.get::<_, String>(4)?),
-            type_: r.get(5)?,
-            message: r.get::<_, Option<serde_json::Value>>(6)?
-                .map(|v| serde_json::from_value(v))
-                .transpose()
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?,
-        }))?.collect::<Result<_, _>>()?;
+    let r = stmt
+        .query_map(params![guild_id, channel_id, message_id], |r| {
+            Ok(MessageLog {
+                guild_id: GuildId::from(r.get::<_, u64>(0)?),
+                user_id: r.get::<_, Option<u64>>(1)?.map(|v| UserId::from(v)),
+                channel_id: r.get(2)?,
+                message_id: MessageId::from(r.get::<_, u64>(3)?),
+                timestamp: Timestamp::from(r.get::<_, String>(4)?),
+                type_: r.get(5)?,
+                message: r
+                    .get::<_, Option<serde_json::Value>>(6)?
+                    .map(|v| serde_json::from_value(v))
+                    .transpose()
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            6,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?,
+            })
+        })?
+        .collect::<Result<_, _>>()?;
 
     Ok(r)
 }
@@ -131,7 +162,9 @@ pub fn get_user(
     )?;
 
     let r = stmt
-        .query_row(params![guild_id, channel_id, message_id], |r| r.get::<_, u64>(0))
+        .query_row(params![guild_id, channel_id, message_id], |r| {
+            r.get::<_, u64>(0)
+        })
         .optional()?
         .map(|id| UserId::from(id));
 

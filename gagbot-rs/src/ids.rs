@@ -1,5 +1,9 @@
-use std::{ops::Deref, str::FromStr, str};
-use rusqlite::{types::{ToSqlOutput, FromSql, ValueRef, FromSqlResult, FromSqlError}, ToSql};
+use std::{ops::Deref, str, str::FromStr};
+
+use rusqlite::{
+    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
+    ToSql,
+};
 
 macro_rules! wrap_id {
     ($wrapper:ident) => {
@@ -27,12 +31,12 @@ macro_rules! wrap_id {
         }
         impl Into<u64> for &$wrapper {
             fn into(self) -> u64 {
-                self.0.0
+                self.0 .0
             }
         }
         impl Into<u64> for $wrapper {
             fn into(self) -> u64 {
-                self.0.0
+                self.0 .0
             }
         }
         impl Deref for $wrapper {
@@ -56,11 +60,14 @@ macro_rules! id_from_str {
         impl FromSql for $wrapper {
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
                 match value {
-                    ValueRef::Integer(v) => Ok(poise::serenity_prelude::model::id::$wrapper::from(v as u64).into()),
-                    ValueRef::Real(v) => Ok(poise::serenity_prelude::model::id::$wrapper::from(v as u64).into()),
+                    ValueRef::Integer(v) => {
+                        Ok(poise::serenity_prelude::model::id::$wrapper::from(v as u64).into())
+                    }
+                    ValueRef::Real(v) => {
+                        Ok(poise::serenity_prelude::model::id::$wrapper::from(v as u64).into())
+                    }
                     ValueRef::Text(v) => poise::serenity_prelude::model::id::$wrapper::from_str(
-                        str::from_utf8(v)
-                            .map_err(|e| FromSqlError::Other(Box::new(e)))?
+                        str::from_utf8(v).map_err(|e| FromSqlError::Other(Box::new(e)))?,
                     )
                     .map(|v| Self(v))
                     .map_err(|e| FromSqlError::Other(Box::new(e))),

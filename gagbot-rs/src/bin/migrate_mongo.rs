@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use clap::Parser;
 use dotenv::dotenv;
 use futures::TryStreamExt;
-use gagbot_rs::{config::*, *};
+use gagbot_rs::{db::queries::config::*, *};
 use mongodb::{
     bson::{doc, oid::ObjectId, Bson as BsonValue},
     options::{ClientOptions, ServerApi, ServerApiVersion},

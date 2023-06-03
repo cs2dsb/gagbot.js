@@ -1,9 +1,13 @@
-use std::str::FromStr;
-use std::fmt::Write;
+use std::{fmt::Write, str::FromStr};
+
 use poise::{self, serenity_prelude::ChannelId, SlashArgument};
 use tokio::sync::oneshot;
 
-use crate::{Context, DbCommand, Embed, Error, config::ConfigKey, permissions::{Permission, PermissionCheck}};
+use crate::{
+    db::{queries::config::ConfigKey, DbCommand},
+    permissions::{Permission, PermissionCheck},
+    Context, Embed, Error,
+};
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Config")]
 /// Print the current value of the provided config key
@@ -105,12 +109,10 @@ pub async fn set_log(
     let mut msg = String::new();
     let mut is_error = false;
     for key in ConfigKey::logging_keys().iter() {
-        let r = ctx.data().set_config(
-            guild_id.into(),
-            *key,
-            timestamp,
-            channel.to_string(),
-        ).await;
+        let r = ctx
+            .data()
+            .set_config(guild_id.into(), *key, timestamp, channel.to_string())
+            .await;
         if msg.len() > 0 {
             msg.push('\n');
         }
@@ -119,7 +121,7 @@ pub async fn set_log(
             Err(e) => {
                 is_error = true;
                 format!("Error setting {}: {:?}", key, e)
-            },
+            }
         });
     }
 
@@ -202,7 +204,6 @@ pub async fn config_help(
         .description(msg)
         .send(&ctx)
         .await?;
-
 
     Ok(())
 }

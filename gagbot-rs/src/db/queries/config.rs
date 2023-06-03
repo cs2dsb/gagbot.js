@@ -55,7 +55,7 @@ impl ConfigKey {
             ConfigKey::LoggingVoiceActivity,
         ]
     }
-    
+
     pub fn description(&self) -> &'static str {
         match self {
             ConfigKey::GreetMessage => "Message template bot posts to new members. Use {tag}, {name} and {discriminator} to refer to the new member",

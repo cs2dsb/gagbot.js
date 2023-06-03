@@ -1,10 +1,18 @@
-use std::{ str::{self, FromStr}, fmt::{Display, Write}};
-use poise::{ChoiceParameter, serenity_prelude::Timestamp};
-use rusqlite::{Connection, ToSql, params, types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef}};
+use std::{
+    fmt::{Display, Write},
+    str::{self, FromStr},
+};
+
+use async_trait::async_trait;
+use poise::{serenity_prelude::Timestamp, ChoiceParameter};
+use rusqlite::{
+    params,
+    types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
+    Connection, ToSql,
+};
 use tracing::debug;
 
 use crate::{Context, GuildId, RoleId};
-use async_trait::async_trait;
 
 #[derive(Debug)]
 pub enum PermissionType {
@@ -23,7 +31,7 @@ impl ToSql for PermissionType {
 
 #[async_trait]
 pub trait PermissionCheck {
-    async fn require_permission(self, permission :Permission) -> anyhow::Result<()>;
+    async fn require_permission(self, permission: Permission) -> anyhow::Result<()>;
 }
 
 #[async_trait]
@@ -32,13 +40,16 @@ impl<'a> PermissionCheck for &'a Context<'a> {
         let guild = self
             .guild()
             .ok_or(anyhow::anyhow!("missing guild in require_permission"))?;
-        let caller = self.author_member().await        
-            .ok_or(anyhow::anyhow!("missing author_member in require_permission"))?;
+        let caller = self.author_member().await.ok_or(anyhow::anyhow!(
+            "missing author_member in require_permission"
+        ))?;
 
         if guild.owner_id != caller.user.id {
-            self.data().require_permission(&guild, &caller, permission).await?;            
+            self.data()
+                .require_permission(&guild, &caller, permission)
+                .await?;
         }
-        
+
         Ok(())
     }
 }
@@ -46,14 +57,14 @@ impl<'a> PermissionCheck for &'a Context<'a> {
 #[derive(Debug, Clone, Copy, ChoiceParameter, PartialEq)]
 pub enum Permission {
     #[name = "! All"]
-    All,    
+    All,
 
     #[name = "permissions.manage"]
     PermissionManage,
-    
+
     #[name = "config.manage"]
     ConfigManage,
-        
+
     #[name = "messages.purge"]
     MessagePurge,
 
@@ -62,9 +73,6 @@ pub enum Permission {
 
     #[name = "member.promote"]
     MemberPromote,
-
-    #[name = "reaction_roles"]
-    ReactionRoles,
 }
 
 impl ToSql for Permission {
@@ -76,9 +84,10 @@ impl ToSql for Permission {
 impl FromSql for Permission {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         if let ValueRef::Text(v) = value {
-            Ok(Self::from_str(str::from_utf8(v)
-                .map_err(|e| FromSqlError::Other(Box::new(e)))?
-            ).map_err(|e| FromSqlError::Other(Box::new(e)))?)
+            Ok(
+                Self::from_str(str::from_utf8(v).map_err(|e| FromSqlError::Other(Box::new(e)))?)
+                    .map_err(|e| FromSqlError::Other(Box::new(e)))?,
+            )
         } else {
             Err(FromSqlError::InvalidType)
         }
@@ -107,22 +116,22 @@ pub fn get(
     }
 
     let mut sql = "SELECT discord_id, value FROM permission WHERE guild_id=?1 AND type=?2 AND discord_id IN (".to_string();
-    
+
     let p_i = 3;
     for i in 0..sorted_roles.len() {
         if i > 0 {
             sql.push_str(", ");
         }
-        write!(&mut sql, "?{}", i+p_i)?;
+        write!(&mut sql, "?{}", i + p_i)?;
     }
-    
+
     sql.push_str(") ORDER BY CASE ");
-    
+
     for i in 0..sorted_roles.len() {
-        write!(&mut sql, "WHEN discord_id=?{} THEN {} ", i+p_i, i+1)?;
+        write!(&mut sql, "WHEN discord_id=?{} THEN {} ", i + p_i, i + 1)?;
     }
-    write!(&mut sql, "ELSE {} END", sorted_roles.len()+1)?;
-    
+    write!(&mut sql, "ELSE {} END", sorted_roles.len() + 1)?;
+
     // I think it's worth caching this even though it is highly dynamic because
     // some of the tasks mods/admins do with the bot will require running several
     // commands back-to-back and the permission check+role count will be the same
@@ -132,12 +141,14 @@ pub fn get(
     for r in sorted_roles.iter() {
         params.push(r);
     }
-    
+
     let permissions = stmt
-        .query_map(params.as_slice(), |row| Ok(EffectivePermission {
-            role: row.get(0)?,
-            permission: row.get(1)?,
-        }))?
+        .query_map(params.as_slice(), |row| {
+            Ok(EffectivePermission {
+                role: row.get(0)?,
+                permission: row.get(1)?,
+            })
+        })?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(permissions)
@@ -156,7 +167,13 @@ pub fn grant(
              ON CONFLICT(guild_id, discord_id, type, value) DO NOTHING",
     )?;
 
-    match stmt.execute(params![guild_id, role_id, PermissionType::Role, permission, &timestamp.to_rfc3339()]) {
+    match stmt.execute(params![
+        guild_id,
+        role_id,
+        PermissionType::Role,
+        permission,
+        &timestamp.to_rfc3339()
+    ]) {
         Ok(1) => {
             debug!("Permission {} granted", permission);
             Ok(true)
@@ -185,7 +202,13 @@ pub fn revoke(
                AND last_update < ?5",
     )?;
 
-    match stmt.execute(params![guild_id, role_id, PermissionType::Role, permission, &timestamp.to_rfc3339()]) {
+    match stmt.execute(params![
+        guild_id,
+        role_id,
+        PermissionType::Role,
+        permission,
+        &timestamp.to_rfc3339()
+    ]) {
         Ok(1) => {
             debug!("Permission {} revoked", permission);
             Ok(true)
@@ -201,11 +224,7 @@ pub fn revoke(
     }
 }
 
-pub fn purge(
-    db: &mut Connection,
-    guild_id: GuildId,
-    timestamp: Timestamp,
-) -> anyhow::Result<bool> {
+pub fn purge(db: &mut Connection, guild_id: GuildId, timestamp: Timestamp) -> anyhow::Result<bool> {
     let tx = db.transaction()?;
 
     {
@@ -213,16 +232,17 @@ pub fn purge(
             "SELECT COUNT(CASE WHEN last_updated >= ?2 THEN 1 END) AS NewRows,
             COUNT(CASE WHEN last_updated < ?2 THEN 1 END) AS OldRows
             FROM permission
-            WHERE guild_id = ?1"
+            WHERE guild_id = ?1",
         )?;
 
-        match stmt.query_row(params![guild_id, &timestamp.to_rfc3339()], |row| Ok((
-            row.get::<_, usize>(0)?,
-            row.get::<_, usize>(1)?,
-        ))) {
+        match stmt.query_row(params![guild_id, &timestamp.to_rfc3339()], |row| {
+            Ok((row.get::<_, usize>(0)?, row.get::<_, usize>(1)?))
+        }) {
             Ok((0, 0)) => return Ok(false),
-            Ok((0, _)) => {},
-            Ok((_, _)) => Err(anyhow::anyhow!("Purge cancelled as data has been updated since the purge command was issued"))?,
+            Ok((0, _)) => {}
+            Ok((_, _)) => Err(anyhow::anyhow!(
+                "Purge cancelled as data has been updated since the purge command was issued"
+            ))?,
             Err(e) => Err(e)?,
         };
     }
@@ -230,7 +250,7 @@ pub fn purge(
     {
         let mut stmt = tx.prepare(
             "DELETE FROM permission 
-            WHERE guild_id=?1"
+            WHERE guild_id=?1",
         )?;
         if let Err(e) = stmt.execute(params![guild_id]) {
             Err(e)?;

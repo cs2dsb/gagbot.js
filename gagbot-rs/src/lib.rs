@@ -1,37 +1,37 @@
-use std::{path::PathBuf, time::Duration, fmt::{Debug, self}};
+use std::{fmt::Debug, path::PathBuf, time::Duration};
 
-use anyhow::{Result, Context as AnyhowContext};
-use chrono::{Utc, Days};
-use config::{ConfigKey, LogChannel};
+use anyhow::Result;
+use db::{
+    queries::config::{ConfigKey, LogChannel},
+    DbCommand,
+};
 use include_dir::{include_dir, Dir};
 use interaction_roles::InteractionRole;
 use lazy_regex::{regex, Captures};
 use message_log::{LogType, MessageLog};
 use permissions::{EffectivePermission, Permission};
-use poise::serenity_prelude::{Guild, Member, Timestamp, User, Http, Channel, ChannelType, CacheHttp, Cache, Message};
+use poise::serenity_prelude::{Guild, Member, Message, Timestamp, User};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use rusqlite_migration::Migrations;
 use tokio::sync::oneshot;
-use std::str::FromStr;
 
-pub mod config;
 pub mod message_count;
 
 mod ids;
 pub use ids::*;
 
-mod db;
-pub use db::*;
+pub mod db;
 
-pub mod permissions;
 pub mod interaction_roles;
 pub mod message_log;
+pub mod permissions;
 
 mod embed;
 pub use embed::*;
-use tracing::{debug };
+use tracing::debug;
 
 pub mod commands;
+pub mod discord_commands;
 
 pub const GAGBOT_ICON: &str = "https://cdn.discordapp.com/emojis/708352151558029322.png";
 pub const GAGBOT_ICON_ERROR: &str = "https://cdn.discordapp.com/emojis/708352247804854285.png";
@@ -49,8 +49,7 @@ pub const INTERACTION_BUTTON_CUSTOM_ID_MAX_LEN: usize = 100;
 pub const INTERACTION_BUTTON_CUSTOM_ID_ROLE_ID_MAX_LEN: usize = 21;
 pub const INTERACTION_BUTTON_CUSTOM_ID_DELIMITER: char = '¬';
 pub const INTERACTION_BUTTON_CUSTOM_ID_PREFIX: &str = "rr";
-pub const INTERACTION_BUTTON_CUSTOM_ID_NAME_MAX_LEN: usize = 
-    INTERACTION_BUTTON_CUSTOM_ID_MAX_LEN 
+pub const INTERACTION_BUTTON_CUSTOM_ID_NAME_MAX_LEN: usize = INTERACTION_BUTTON_CUSTOM_ID_MAX_LEN
     - INTERACTION_BUTTON_CUSTOM_ID_ROLE_ID_MAX_LEN
     - 1 //delimiter
     - INTERACTION_BUTTON_CUSTOM_ID_PREFIX.len();
@@ -59,7 +58,7 @@ pub const INTERACTION_BUTTON_CUSTOM_ID_NAME_MAX_LEN: usize =
 /// 200 is the default from discord.js <https://github.com/discordjs/discord.js/blob/86e5f5a119c6d2588b988a33236d358ded357847/packages/discord.js/src/util/Options.js#L175>
 pub const CACHE_MAX_MESSAGES: usize = 200;
 
-pub const DISK_SPACE_WARNING_LEVEL: u64 = 5*1024*1024*1024;
+pub const DISK_SPACE_WARNING_LEVEL: u64 = 5 * 1024 * 1024 * 1024;
 
 static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
 
@@ -72,7 +71,7 @@ pub struct BotData {
 
 impl BotData {
     pub fn new(
-        db_command_sender: flume::Sender<DbCommand>, 
+        db_command_sender: flume::Sender<DbCommand>,
         db_file_path: Option<PathBuf>,
         background_task_frequency: Duration,
     ) -> Self {
@@ -92,16 +91,12 @@ impl BotData {
     }
 
     pub async fn general_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>> {
-        self.log_channel(guild_id, vec![config::LogChannel::General])
-            .await
+        self.log_channel(guild_id, vec![LogChannel::General]).await
     }
 
     pub async fn error_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>> {
-        self.log_channel(
-            guild_id,
-            vec![config::LogChannel::Error, config::LogChannel::General],
-        )
-        .await
+        self.log_channel(guild_id, vec![LogChannel::Error, LogChannel::General])
+            .await
     }
 
     pub async fn log_channel(
@@ -217,24 +212,27 @@ impl BotData {
         member: &Member,
     ) -> Result<Vec<EffectivePermission>> {
         let sorted_roles = {
-            let mut roles = guild.roles
-            .values()            
-            // Filter the roles down to only the ones the member has
-            .filter_map(|v| if member.roles.contains(&v.id) {
-                Some((v.position, v.id))
-            } else {
-                None
-            })
-            .collect::<Vec<_>>();
-            
+            let mut roles = guild
+                .roles
+                .values()
+                // Filter the roles down to only the ones the member has
+                .filter_map(|v| {
+                    if member.roles.contains(&v.id) {
+                        Some((v.position, v.id))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
             // Sort by position so higher roles are on the top
             roles.sort_by(|(a, _), (b, _)| b.cmp(a));
 
             roles.into_iter().map(|(_, b)| b.into()).collect::<Vec<_>>()
         };
-            
+
         let guild_id = member.guild_id.into();
-             
+
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetMemberPermissions {
@@ -244,7 +242,7 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    }   
+    }
 
     pub async fn require_permission(
         &self,
@@ -253,21 +251,22 @@ impl BotData {
         permission: Permission,
     ) -> Result<EffectivePermission> {
         let effective_permission = self
-            .get_member_permissions(guild, member).await?
+            .get_member_permissions(guild, member)
+            .await?
             .into_iter()
             // TODO: do we need anything more sophisticated like a tree of permissions?
             .find(|x| x.permission == permission || x.permission == Permission::All);
 
         effective_permission.ok_or(anyhow::anyhow!("Permission denied"))
-    }   
-    
+    }
+
     pub async fn grant_permission(
         &self,
         guild_id: GuildId,
         role_id: RoleId,
         permission: Permission,
         timestamp: Timestamp,
-    ) -> Result<bool> {             
+    ) -> Result<bool> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GrantPermission {
@@ -279,15 +278,15 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    }  
-    
+    }
+
     pub async fn revoke_permission(
         &self,
         guild_id: GuildId,
         role_id: RoleId,
         permission: Permission,
         timestamp: Timestamp,
-    ) -> Result<bool> {             
+    ) -> Result<bool> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::RevokePermission {
@@ -299,13 +298,9 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    }  
-    
-    pub async fn purge_permission(
-        &self,
-        guild_id: GuildId,
-        timestamp: Timestamp,
-    ) -> Result<bool> {             
+    }
+
+    pub async fn purge_permission(&self, guild_id: GuildId, timestamp: Timestamp) -> Result<bool> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::PurgePermissions {
@@ -315,13 +310,13 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    }  
-    
+    }
+
     pub async fn get_interaction_role(
         &self,
         guild_id: GuildId,
         name: String,
-    ) -> Result<Option<InteractionRole>> {             
+    ) -> Result<Option<InteractionRole>> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetInteractionRole {
@@ -331,8 +326,8 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    }  
-    
+    }
+
     pub async fn update_interaction_role(
         &self,
         guild_id: GuildId,
@@ -342,7 +337,7 @@ impl BotData {
         message_id: Option<MessageId>,
         exclusive: bool,
         timestamp: Timestamp,
-    ) -> Result<bool> {             
+    ) -> Result<bool> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::UpdateInteractionRoleSet {
@@ -357,17 +352,17 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    } 
-    
+    }
+
     pub async fn update_interaction_choice(
         &self,
         guild_id: GuildId,
         set_name: String,
         choice: String,
-        emoji: Option<String>,    
-        role_id: RoleId,    
+        emoji: Option<String>,
+        role_id: RoleId,
         timestamp: Timestamp,
-    ) -> Result<bool> {             
+    ) -> Result<bool> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::UpdateInteractionRoleChoice {
@@ -381,8 +376,8 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    } 
-    
+    }
+
     pub async fn log_message(
         &self,
         guild_id: GuildId,
@@ -392,7 +387,7 @@ impl BotData {
         timestamp: Timestamp,
         type_: LogType,
         message: Option<Message>,
-    ) -> Result<()> {             
+    ) -> Result<()> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::LogMessage {
@@ -407,66 +402,60 @@ impl BotData {
             })
             .await?;
         Ok(r.await??)
-    } 
+    }
 
     pub async fn get_message_log(
         &self,
         guild_id: GuildId,
         channel_id: ChannelId,
-        message_id: MessageId,        
-    ) -> Result<Vec<MessageLog>> {             
+        message_id: MessageId,
+    ) -> Result<Vec<MessageLog>> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
-            .send_async(DbCommand::GetLogMessages { 
+            .send_async(DbCommand::GetLogMessages {
                 guild_id,
                 channel_id,
                 message_id,
-                respond_to: s,
-            })
-            .await?;
-        Ok(r.await??)
-    } 
-
-    pub async fn lookup_user_from_message(
-        &self,
-        guild_id: GuildId,
-        channel_id: ChannelId,
-        message_id: MessageId,        
-    ) -> Result<Option<UserId>> {             
-        let (s, r) = oneshot::channel();
-        self.db_command_sender
-            .send_async(DbCommand::GetUserFromLogMessages { 
-                guild_id,
-                channel_id,
-                message_id,
-                respond_to: s,
-            })
-            .await?;
-        Ok(r.await??)
-    } 
-
-    pub async fn db_table_sizes(
-        &self,
-    ) -> Result<Vec<(String, u64)>> {
-        let (s, r) = oneshot::channel();
-        self.db_command_sender
-            .send_async(DbCommand::GetTableBytes{
                 respond_to: s,
             })
             .await?;
         Ok(r.await??)
     }
 
-    pub async fn get_config_u64(
+    pub async fn lookup_user_from_message(
         &self,
         guild_id: GuildId,
-        key: ConfigKey,
-    ) -> Result<Option<u64>> {
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<Option<UserId>> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
-            .send_async(DbCommand::GetConfigU64 { 
-                guild_id, 
-                key, 
+            .send_async(DbCommand::GetUserFromLogMessages {
+                guild_id,
+                channel_id,
+                message_id,
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }
+
+    pub async fn db_table_sizes(&self) -> Result<Vec<(String, u64, u64)>> {
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetTableBytesAndCount {
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }
+
+    pub async fn get_config_u64(&self, guild_id: GuildId, key: ConfigKey) -> Result<Option<u64>> {
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetConfigU64 {
+                guild_id,
+                key,
                 respond_to: s,
             })
             .await?;
@@ -480,9 +469,9 @@ impl BotData {
     ) -> Result<Option<String>> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
-            .send_async(DbCommand::GetConfigString { 
-                guild_id, 
-                key, 
+            .send_async(DbCommand::GetConfigString {
+                guild_id,
+                key,
                 respond_to: s,
             })
             .await?;
@@ -539,264 +528,4 @@ pub fn close_database(con: Connection) -> Result<()> {
     }
 
     Ok(())
-}
-
-
-#[derive(Debug, Default)]
-pub struct PromoteStats {
-    pub promoted: usize,
-    pub unqualified: usize,
-    pub total: usize,
-}
-
-impl fmt::Display for PromoteStats {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Promote {{ promoted: {}, unqualified: {}, total: {} }}",
-            self.promoted,
-            self.unqualified,
-            self.total,
-        )
-    }
-}
-
-pub enum PromoteResult {
-    Unconfigured(ConfigKey),
-    Ok(PromoteStats)
-}
-
-#[allow(unused)]
-pub async fn run_promote<'a, 'b, T>(
-    data: &'a BotData, 
-    ctx: &'a T, 
-    guild_id: GuildId,
-    force_upgrade_member: Option<Member>,
-) -> anyhow::Result<PromoteResult> 
-where 
-    T: 'a + Clone + CacheHttp + AsRef<Cache> + AsRef<Http>
-{    
-    const PROGRESS_TITLE: &str = "Promoting";
-
-    macro_rules! get_config_string {
-        ($data:expr, $guild_id: expr, $key:expr) => {
-            {
-                let value = $data
-                    .get_config_string($guild_id, $key)
-                    .await
-                    .with_context(|| format!("Failed to get {} config value", $key))?;
-
-                if value.is_none() {
-                    return Ok(PromoteResult::Unconfigured($key));
-                }            
-            
-                value.unwrap()
-            }
-        };
-    }
-
-    macro_rules! get_config_chan {
-        ($ctx:expr, $data:expr, $guild_id: expr, $key:expr) => {{
-            let string = get_config_string!($data, $guild_id, $key);
-            let id = ChannelId::from_str(&string)
-                .with_context(|| format!("Failed to parse {} ({}) as a ChannelId", $key, string))?;
-
-            let chan = id.to_channel($ctx)
-                .await
-                .with_context(|| format!("Failed to resolve {} ({:?}) to a channel", $key, id))?;
-
-            let chan = if let Channel::Guild(c) = chan {
-                if c.kind == ChannelType::Text {
-                    Some(c)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-                
-            chan.ok_or(anyhow::anyhow!("Channel for {} must be a text channel", $key))?
-        }};
-    }
-
-    macro_rules! get_config_role {
-        ($ctx:expr, $data:expr, $guild_id: expr, $key:expr) => {{
-            let string = get_config_string!($data, $guild_id, $key);
-            let id = RoleId::from_str(&string)
-                .with_context(|| format!("Failed to parse {} ({}) as a RoleId", $key, string))?;
-            
-            if let Some(role) = id.to_role_cached($ctx) {
-                role
-            } else {
-                // This should warm up the cache only on the first miss
-                $guild_id.roles($ctx)
-                    .await
-                    .context("Failed to lookup guild roles")?;
-
-                id.to_role_cached($ctx)
-                    .ok_or(anyhow::anyhow!("Failed to resolve {} ({:?}) to a role", $key, id))?            
-            }
-        }};
-    }
-
-    macro_rules! get_config_u64 {
-        ($data:expr, $guild_id: expr, $key:expr) => {{
-            let string = get_config_string!($data, $guild_id, $key);
-            u64::from_str(&string)
-                .with_context(|| format!("Failed to parse {} ({}) as an unsigned int", $key, string))?
-        }};
-    }
-
-    async fn work<'a, Ctx>(
-        ctx: &'a Ctx, 
-        (guild_id, data, force_upgrade_member): (GuildId, &'a BotData, Option<Member>), 
-        progress_chan: flume::Sender<String>
-    ) -> anyhow::Result<PromoteResult> 
-    where 
-        Ctx: 'a + CacheHttp + AsRef<Http> + AsRef<Cache>,
-    {
-        /**** Resolve the guild ****/
-        let mut guild = guild_id
-            .to_guild_cached(ctx)
-            .ok_or(anyhow::anyhow!("Guild missing from cache for {:?}", guild_id))?;
-
-        /**** Get all the config we will need  ****/
-        let new_role = get_config_role!(ctx, data, guild_id, ConfigKey::GreetRole);
-        let junior_role = get_config_role!(ctx, data, guild_id, ConfigKey::PromoteJuniorRole);
-        let full_role = get_config_role!(ctx, data, guild_id, ConfigKey::PromoteFullRole);    
-        let new_chat_channel = get_config_chan!(ctx, data, guild_id, ConfigKey::PromoteNewChatChannel);
-        let junior_chat_channel = get_config_chan!(ctx, data, guild_id, ConfigKey::PromoteJuniorChatChannel);
-        let new_chat_min_messages = get_config_u64!(data, guild_id, ConfigKey::PromoteNewChatMinMessages);
-        let junior_chat_min_messages = get_config_u64!(data, guild_id, ConfigKey::PromoteJuniorChatMinMessages);
-        let junior_min_age = get_config_u64!(data, guild_id, ConfigKey::PromoteJuniorMinAge);        
-        let junior_cutoff_age = Utc::now() - Days::new(junior_min_age);
-
-        /**** Do some sanity checks on the config ****/
-        anyhow::ensure!(new_role != junior_role, "New and Junior roles cannot be the same! ({:?})", new_role);
-        anyhow::ensure!(new_role != full_role, "New and Full roles cannot be the same! ({:?})", new_role);
-        anyhow::ensure!(junior_role != full_role, "Junior and Full roles cannot be the same! ({:?})", junior_role);
-        anyhow::ensure!(guild.member_count as usize == guild.members.len(), "Member count and number of members in cache differ");
-
-        /**** Fetch the members ****/
-        /// TODO: The cache is primed when joining the guild and maintained by events.
-        ///       However, this is only good for 1000 or so members. If we reach that
-        ///       level this functionality should be converted to be event driven when
-        ///       users interact with the server
-        let members = guild
-            .members
-            .iter_mut()
-            .filter_map(|(_, m)| if !m.user.bot {
-                Some(m)
-            } else {
-                None
-            });
-
-        let mut promote_stats = PromoteStats::default();
-
-        for m in members {
-            promote_stats.total += 1;
-
-            let mut promoted = false;
-            let is_full = m.roles.contains(&full_role.id);
-            let is_new = m.roles.contains(&new_role.id);
-            let mut is_junior = m.roles.contains(&junior_role.id);
-
-            let mut skip_checks = if let Some(fum) = force_upgrade_member.as_ref() {
-                m.user.id == fum.user.id
-            } else {
-                false
-            };
-
-            if is_full && !is_junior && !is_new {
-                continue;
-            }
-
-            if is_new {
-                let message_count = if skip_checks {
-                    new_chat_min_messages
-                } else {
-                    data.message_count(
-                        guild_id.into(),
-                        m.user.id.into(),
-                        Some(new_chat_channel.id.into()),
-                    )
-                    .await? as u64
-                };
-
-                if message_count >= new_chat_min_messages {
-                    if !is_junior && !is_full {
-                        progress_chan.send_async(format!("Promoting {} to junior", m)).await;                        
-                        m.add_role(ctx, junior_role.id).await
-                            .context("Adding junior role")?;
-                        is_junior = true;                        
-                    }
-                    
-                    m.remove_role(ctx, new_role.id).await
-                        .context("Removing new role")?;
-
-                    promoted |= true;
-
-                    // We only skip 1 round of checks
-                    skip_checks = false;
-                } else {
-                    debug!("Not promoting {} to junior, insufficient messages ({})", m.user.name, message_count);
-                }
-            }
-
-            if is_junior {
-                let old_enough = if let Some(join) = m.joined_at {
-                    skip_checks || *join < junior_cutoff_age
-                } else {
-                    true
-                };
-
-                if old_enough {
-                    let message_count = if skip_checks {
-                        junior_chat_min_messages
-                    } else {
-                        data.message_count(
-                            guild_id.into(),
-                            m.user.id.into(),
-                            Some(junior_chat_channel.id.into()),
-                        )
-                        .await? as u64
-                    };
-                    
-                    if message_count >= junior_chat_min_messages {
-                        if !is_full {
-                            progress_chan.send_async(format!("Promoting {} to full", m)).await;    
-                            m.add_role(ctx, full_role.id).await
-                                .context("Adding full role")?;
-                        }
-                        
-                        m.remove_role(ctx, junior_role.id).await
-                            .context("Removing junior role")?;                        
-
-                        promoted |= true;
-                    } else {
-                        debug!("Not promoting {} to full, insufficient messages ({})", m.user.name, message_count);
-                    }
-                } else {
-                    debug!("Not promoting {} to full, not been a member long enough", m.user.name);
-                }
-            }
-
-            if promoted {
-                promote_stats.promoted += 1;
-            } else {
-                promote_stats.unqualified += 1;
-            }
-        }
-        progress_chan.send_async(format!("{}", promote_stats)).await;  
-
-        Ok(PromoteResult::Ok(promote_stats))
-    }
-    
-    with_progress_embed(
-        data,
-        ctx,
-        guild_id,
-        LogChannel::General,
-        PROGRESS_TITLE,
-        work,
-        (guild_id, data, force_upgrade_member),
-    ).await
 }

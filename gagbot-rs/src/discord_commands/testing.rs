@@ -1,14 +1,17 @@
-use poise::{self, serenity_prelude::{ButtonStyle, ChannelId, Color,  User}};
+use poise::{
+    self,
+    serenity_prelude::{ButtonStyle, ChannelId, Color, User},
+};
 
-use crate::{Context, Embed, EmbedFlavour, Error, INTERACTION_BUTTON_CUSTOM_ID_DELIMITER, INTERACTION_BUTTON_CUSTOM_ID_PREFIX};
+use crate::{
+    Context, Embed, EmbedFlavour, Error, INTERACTION_BUTTON_CUSTOM_ID_DELIMITER,
+    INTERACTION_BUTTON_CUSTOM_ID_PREFIX,
+};
 
 #[poise::command(prefix_command, slash_command, category = "Testing")]
 /// Ping pong
 pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
-    Embed::default()
-        .description("Pong!")
-        .send(&ctx)
-        .await?;
+    Embed::default().description("Pong!").send(&ctx).await?;
 
     Ok(())
 }
@@ -34,7 +37,7 @@ pub async fn test_embed(
     embed.thumbnail_url = thumbnail_url;
     embed.title = title;
     embed.description = description;
-    
+
     embed.send(&ctx).await?;
 
     Ok(())
@@ -43,9 +46,7 @@ pub async fn test_embed(
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
 /// Displays a generic success message
 pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), Error> {
-    Embed::success()
-        .send(&ctx)
-        .await?;
+    Embed::success().send(&ctx).await?;
 
     Ok(())
 }
@@ -53,9 +54,7 @@ pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
 /// Displays a generic error message
 pub async fn test_embed_error(ctx: Context<'_>) -> Result<(), Error> {
-    Embed::error()
-        .send(&ctx)
-        .await?;
+    Embed::error().send(&ctx).await?;
 
     Ok(())
 }
@@ -72,9 +71,7 @@ pub async fn test_greet(
         .expect("missing guild in 'guild_only' command");
 
     if let Some((_channel_id, embed)) = ctx.data().get_greet(guild_id.into(), &user).await? {
-        embed
-            .send(&ctx)
-            .await?;
+        embed.send(&ctx).await?;
     } else {
         Embed::default()
             .description("Greeting is not configured")
@@ -90,14 +87,14 @@ pub async fn test_greet(
 pub async fn test_interaction_roles(
     ctx: Context<'_>,
 
-    #[description = "Channel to post in"] channel: ChannelId,     
+    #[description = "Channel to post in"] channel: ChannelId,
 ) -> Result<(), Error> {
     // let guild = ctx
     //     .guild()
     //     .expect("missing guild in 'guild_only' command");
 
-    // if let Some((_channel_id, embed)) = ctx.data().get_greet(guild_id.into(), &user).await? {
-    //     embed
+    // if let Some((_channel_id, embed)) = ctx.data().get_greet(guild_id.into(),
+    // &user).await? {     embed
     //         .send(&ctx)
     //         .await?;
     // } else {
@@ -107,36 +104,42 @@ pub async fn test_interaction_roles(
     //         .await?;
     // }
 
-
-    let _reply = channel.send_message(&ctx, |m| m
-        .embed(|b| Embed::default()
-            .title("Choose your platform")
-            .description("Select the platform(s) you game on")
-            .create_embed(b)
-        )
-        .components(|c| c
-            .create_action_row(|r| r
-                .create_button(|b| b
-                    .custom_id(format!("{}{}platform{}1099011451596845067", 
-                        INTERACTION_BUTTON_CUSTOM_ID_PREFIX, 
-                        INTERACTION_BUTTON_CUSTOM_ID_DELIMITER, 
-                        INTERACTION_BUTTON_CUSTOM_ID_DELIMITER))
-                    .label("PC")
-                    .style(ButtonStyle::Success)
-                    .emoji('👍')
-                ) 
-                .create_button(|b| b
-                    .custom_id(format!("{}{}platform{}1099011543108169748", 
-                        INTERACTION_BUTTON_CUSTOM_ID_PREFIX, 
-                        INTERACTION_BUTTON_CUSTOM_ID_DELIMITER, 
-                        INTERACTION_BUTTON_CUSTOM_ID_DELIMITER))
-                    .label("Playstation")
-                    .style(ButtonStyle::Danger)
-                    .emoji('👎')
-                )                
-            )            
-        )
-    ).await?;
+    let _reply = channel
+        .send_message(&ctx, |m| {
+            m.embed(|b| {
+                Embed::default()
+                    .title("Choose your platform")
+                    .description("Select the platform(s) you game on")
+                    .create_embed(b)
+            })
+            .components(|c| {
+                c.create_action_row(|r| {
+                    r.create_button(|b| {
+                        b.custom_id(format!(
+                            "{}{}platform{}1099011451596845067",
+                            INTERACTION_BUTTON_CUSTOM_ID_PREFIX,
+                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER,
+                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER
+                        ))
+                        .label("PC")
+                        .style(ButtonStyle::Success)
+                        .emoji('👍')
+                    })
+                    .create_button(|b| {
+                        b.custom_id(format!(
+                            "{}{}platform{}1099011543108169748",
+                            INTERACTION_BUTTON_CUSTOM_ID_PREFIX,
+                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER,
+                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER
+                        ))
+                        .label("Playstation")
+                        .style(ButtonStyle::Danger)
+                        .emoji('👎')
+                    })
+                })
+            })
+        })
+        .await?;
 
     ctx.send(|b| b.content("ok")).await?;
 

@@ -7,7 +7,7 @@ CREATE TABLE message_log (
     timestamp TEXT NOT NULL,
 
     type TEXT NOT NULL
-        CHECK(type IN ('CREATE', 'EDIT', 'DELETE')),
+        CHECK(type IN ('CREATE', 'EDIT', 'DELETE', 'PURGE')),
 
     message_json TEXT
 ) STRICT;
