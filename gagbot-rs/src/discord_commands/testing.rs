@@ -1,11 +1,14 @@
+use std::borrow::Cow;
+use std::fmt::Write;
+
 use poise::{
     self,
-    serenity_prelude::{ButtonStyle, ChannelId, Color, User},
+    serenity_prelude::{Color, Member},
 };
+use tracing::error;
 
 use crate::{
-    Context, Embed, EmbedFlavour, Error, INTERACTION_BUTTON_CUSTOM_ID_DELIMITER,
-    INTERACTION_BUTTON_CUSTOM_ID_PREFIX,
+    Context, Embed, EmbedFlavour, Error, commands::{greet::run_greet, promote::OptionallyConfiguredResult},
 };
 
 #[poise::command(prefix_command, slash_command, category = "Testing")]
@@ -60,88 +63,54 @@ pub async fn test_embed_error(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
-/// Test the bot's greet functionality
-pub async fn test_greet(
+/// Test the bot's greet functionality - doesn't assign any roles, it only posts the
+/// greeting message
+pub async fn test_greet_message(
     ctx: Context<'_>,
 
-    #[description = "Member to greet"] user: User,
+    #[description = "Member to greet. Defaults to your user if not provided"] 
+    member: Option<Member>,
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");
 
-    if let Some((_channel_id, embed)) = ctx.data().get_greet(guild_id.into(), &user).await? {
-        embed.send(&ctx).await?;
-    } else {
-        Embed::default()
-            .description("Greeting is not configured")
-            .send(&ctx)
-            .await?;
+    let member = member
+        .map(|v| Cow::Owned(v))
+        .or(ctx.author_member().await.map(|v| v.clone()))
+        .ok_or(anyhow::anyhow!("Member not provided and author missing from context"))?;
+
+    let mut embed = Embed::default().title("Greeting").ephemeral(true);
+
+    let mut msg = String::new();
+    // 0 = ok, 1 = warn, 2 = error
+    let mut err_lvl = 0;
+
+    match run_greet(ctx.data(), &ctx, guild_id.into(), member.into_owned(), false).await {
+        Ok(OptionallyConfiguredResult::Ok(_)) => {
+            write!(&mut msg, ":white_check_mark: Done")?;
+        }
+        Ok(OptionallyConfiguredResult::Unconfigured(key)) => {
+            err_lvl = err_lvl.max(1);
+            write!(&mut msg, ":grey_question: Greet not configured: {}", key)?;
+        }
+        Err(e) => {
+            err_lvl = err_lvl.max(2);
+            let err = format!(":x: Greet error: {:?}", e);
+            error!("Error running greet: {}", err);
+            msg.push_str(&err);
+        }
     }
+    msg.push('\n');
 
-    Ok(())
-}
+    embed.flavour = Some(match err_lvl {
+        0 => EmbedFlavour::Success,
+        1 => EmbedFlavour::Normal,
+        _ => EmbedFlavour::Error,
+    });
 
-#[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
-/// Test the bot's interaction roles functionality
-pub async fn test_interaction_roles(
-    ctx: Context<'_>,
-
-    #[description = "Channel to post in"] channel: ChannelId,
-) -> Result<(), Error> {
-    // let guild = ctx
-    //     .guild()
-    //     .expect("missing guild in 'guild_only' command");
-
-    // if let Some((_channel_id, embed)) = ctx.data().get_greet(guild_id.into(),
-    // &user).await? {     embed
-    //         .send(&ctx)
-    //         .await?;
-    // } else {
-    //     Embed::default()
-    //         .description("Greeting is not configured")
-    //         .send(&ctx)
-    //         .await?;
-    // }
-
-    let _reply = channel
-        .send_message(&ctx, |m| {
-            m.embed(|b| {
-                Embed::default()
-                    .title("Choose your platform")
-                    .description("Select the platform(s) you game on")
-                    .create_embed(b)
-            })
-            .components(|c| {
-                c.create_action_row(|r| {
-                    r.create_button(|b| {
-                        b.custom_id(format!(
-                            "{}{}platform{}1099011451596845067",
-                            INTERACTION_BUTTON_CUSTOM_ID_PREFIX,
-                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER,
-                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER
-                        ))
-                        .label("PC")
-                        .style(ButtonStyle::Success)
-                        .emoji('👍')
-                    })
-                    .create_button(|b| {
-                        b.custom_id(format!(
-                            "{}{}platform{}1099011543108169748",
-                            INTERACTION_BUTTON_CUSTOM_ID_PREFIX,
-                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER,
-                            INTERACTION_BUTTON_CUSTOM_ID_DELIMITER
-                        ))
-                        .label("Playstation")
-                        .style(ButtonStyle::Danger)
-                        .emoji('👎')
-                    })
-                })
-            })
-        })
-        .await?;
-
-    ctx.send(|b| b.content("ok")).await?;
+    embed = embed.description(msg);
+    embed.send(&ctx).await?;
 
     Ok(())
 }

@@ -15,6 +15,8 @@ pub enum ConfigKey {
     GreetChannel,
     #[name = "greet.role"]
     GreetRole,
+    #[name = "greet.default_role"]
+    GreetDefaultRole,
     #[name = "greet.welcomemessage"]
     GreetWelcomeMessage,
     #[name = "greet.welcomechannel"]
@@ -68,6 +70,7 @@ impl ConfigKey {
             ConfigKey::LoggingErrors => "Channel to log bot errors in",
             ConfigKey::LoggingVoiceActivity => "Channel to log member voice activity in",
             ConfigKey::GreetRole => "Role given by a mod as part of the add member process",
+            ConfigKey::GreetDefaultRole => "Role given automatically when a member joins the server",
             ConfigKey::PromoteJuniorRole => "Role given once an introduction has been done",
             ConfigKey::PromoteFullRole => "Role given after a certain time has passed and number of messages are posted",
             ConfigKey::PromoteNewChatChannel => "Channel new members must post their introduction in",
@@ -85,13 +88,25 @@ impl ToSql for ConfigKey {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, ChoiceParameter)]
+#[derive(Debug, PartialEq, Eq, ChoiceParameter, Clone, Copy)]
 pub enum LogChannel {
     General,
     Error,
     EditsAndDeletes,
     JoiningAndLeaving,
     VoiceActivity,
+}
+
+impl Into<ConfigKey> for LogChannel {
+    fn into(self) -> ConfigKey {
+        match self {
+            Self::General => ConfigKey::LoggingGeneral,
+            Self::EditsAndDeletes => ConfigKey::LoggingEditsAndDeletes,
+            Self::JoiningAndLeaving => ConfigKey::LoggingJoiningAndLeaving,
+            Self::Error => ConfigKey::LoggingErrors,
+            Self::VoiceActivity => ConfigKey::LoggingVoiceActivity,
+        }
+    }
 }
 
 impl ToSql for LogChannel {

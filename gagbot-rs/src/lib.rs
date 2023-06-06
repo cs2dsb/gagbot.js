@@ -42,6 +42,7 @@ pub const GAGBOT_COLOR_SUCCESS: i32 = 0x00FF00;
 pub const GAGBOT_COLOR_LOG_EDIT: i32 = 0x30649c;
 pub const GAGBOT_COLOR_LOG_DELETE: i32 = 0x9c3730;
 pub const GAGBOT_COLOR_GREET: i32 = 0x65e7b7;
+pub const GAGBOT_COLOR_WELCOME: i32 = GAGBOT_COLOR_GREET;
 pub const GAGBOT_COLOR_LOG_JOIN: i32 = 0x009900;
 pub const GAGBOT_COLOR_LOG_LEAVE: i32 = 0x990044;
 
@@ -146,20 +147,13 @@ impl BotData {
             })
             .await?;
 
-        if let Some((channel_id, message)) = r.await?? {
-            let replace_regex = regex!(r"\{\{([^{}]+)}}");
-            let user = std::sync::Arc::new(user);
-            let message = replace_regex.replace_all(&message, |caps: &Captures| match &caps[0] {
-                "{{tag}}" => user.to_string(),
-                "{{name}}" => user.name.clone(),
-                "{{discriminator}}" => user.discriminator.to_string(),
-                _ => format!("{{{{ unknown replacement \"{}\" }}", &caps[0]),
-            });
-            let message = message.replace("\\n", "\n").to_string();
+        if let Some((channel_id, mut message)) = r.await?? {
+            expand_greeting_template(user, &mut message);
 
             let mut embed = Embed::default()
+                .content(format!("{user}"))
                 .description(message)
-                .color(GAGBOT_COLOR_GREET);
+                .random_color();
             embed.thumbnail_url = user.avatar_url();
 
             Ok(Some((channel_id, embed)))
@@ -477,6 +471,17 @@ impl BotData {
             .await?;
         Ok(r.await??)
     }
+}
+
+pub fn expand_greeting_template(user: &User, message: &mut String) {
+    let replace_regex = regex!(r"\{\{([^{}]+)}}");
+    *message = replace_regex.replace_all(&message, |caps: &Captures| match &caps[0] {
+        "{{tag}}" => user.to_string(),
+        "{{name}}" => user.name.clone(),
+        "{{discriminator}}" => user.discriminator.to_string(),
+        _ => format!("{{{{ unknown replacement \"{}\" }}", &caps[0]),
+    })
+    .replace("\\n", "\n").to_string();
 }
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

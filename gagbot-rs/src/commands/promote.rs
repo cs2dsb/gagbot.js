@@ -9,6 +9,7 @@ use poise::serenity_prelude::{Cache, CacheHttp, Channel, ChannelType, Http, Memb
 use tracing::debug;
 
 use crate::{
+    get_config_role, get_config_chan, get_config_u64,
     db::queries::config::{ConfigKey, LogChannel},
     with_progress_embed, BotData, ChannelId, GuildId, RoleId,
 };
@@ -30,114 +31,37 @@ impl fmt::Display for PromoteStats {
     }
 }
 
-pub enum PromoteResult {
+pub enum OptionallyConfiguredResult<T> {
     Unconfigured(ConfigKey),
-    Ok(PromoteStats),
+    Ok(T),
 }
 
-#[allow(unused)]
 pub async fn run_promote<'a, 'b, T>(
     data: &'a BotData,
     ctx: &'a T,
     guild_id: GuildId,
     force_upgrade_member: Option<Member>,
-) -> anyhow::Result<PromoteResult>
+) -> anyhow::Result<OptionallyConfiguredResult<PromoteStats>>
 where
     T: 'a + Clone + CacheHttp + AsRef<Cache> + AsRef<Http>,
 {
     const PROGRESS_TITLE: &str = "Promoting";
 
-    macro_rules! get_config_string {
-        ($data:expr, $guild_id: expr, $key:expr) => {{
-            let value = $data
-                .get_config_string($guild_id, $key)
-                .await
-                .with_context(|| format!("Failed to get {} config value", $key))?;
-
-            if value.is_none() {
-                return Ok(PromoteResult::Unconfigured($key));
-            }
-
-            value.unwrap()
-        }};
-    }
-
-    macro_rules! get_config_chan {
-        ($ctx:expr, $data:expr, $guild_id: expr, $key:expr) => {{
-            let string = get_config_string!($data, $guild_id, $key);
-            let id = ChannelId::from_str(&string)
-                .with_context(|| format!("Failed to parse {} ({}) as a ChannelId", $key, string))?;
-
-            let chan = id
-                .to_channel($ctx)
-                .await
-                .with_context(|| format!("Failed to resolve {} ({:?}) to a channel", $key, id))?;
-
-            let chan = if let Channel::Guild(c) = chan {
-                if c.kind == ChannelType::Text {
-                    Some(c)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            chan.ok_or(anyhow::anyhow!(
-                "Channel for {} must be a text channel",
-                $key
-            ))?
-        }};
-    }
-
-    macro_rules! get_config_role {
-        ($ctx:expr, $data:expr, $guild_id: expr, $key:expr) => {{
-            let string = get_config_string!($data, $guild_id, $key);
-            let id = RoleId::from_str(&string)
-                .with_context(|| format!("Failed to parse {} ({}) as a RoleId", $key, string))?;
-
-            if let Some(role) = id.to_role_cached($ctx) {
-                role
-            } else {
-                // This should warm up the cache only on the first miss
-                $guild_id
-                    .roles($ctx)
-                    .await
-                    .context("Failed to lookup guild roles")?;
-
-                id.to_role_cached($ctx).ok_or(anyhow::anyhow!(
-                    "Failed to resolve {} ({:?}) to a role",
-                    $key,
-                    id
-                ))?
-            }
-        }};
-    }
-
-    macro_rules! get_config_u64 {
-        ($data:expr, $guild_id: expr, $key:expr) => {{
-            let string = get_config_string!($data, $guild_id, $key);
-            u64::from_str(&string).with_context(|| {
-                format!("Failed to parse {} ({}) as an unsigned int", $key, string)
-            })?
-        }};
-    }
-
     async fn work<'a, Ctx>(
         ctx: &'a Ctx,
         (guild_id, data, force_upgrade_member): (GuildId, &'a BotData, Option<Member>),
         progress_chan: flume::Sender<String>,
-    ) -> anyhow::Result<PromoteResult>
+    ) -> anyhow::Result<OptionallyConfiguredResult<PromoteStats>>
     where
         Ctx: 'a + CacheHttp + AsRef<Http> + AsRef<Cache>,
     {
-        /// ** Resolve the guild ***
+        // Resolve the guild
         let mut guild = guild_id.to_guild_cached(ctx).ok_or(anyhow::anyhow!(
             "Guild missing from cache for {:?}",
             guild_id
         ))?;
 
-        /// ** Get all the config we will need  ***
+        // Get all the config we will need 
         let new_role = get_config_role!(ctx, data, guild_id, ConfigKey::GreetRole);
         let junior_role = get_config_role!(ctx, data, guild_id, ConfigKey::PromoteJuniorRole);
         let full_role = get_config_role!(ctx, data, guild_id, ConfigKey::PromoteFullRole);
@@ -152,7 +76,7 @@ where
         let junior_min_age = get_config_u64!(data, guild_id, ConfigKey::PromoteJuniorMinAge);
         let junior_cutoff_age = Utc::now() - Days::new(junior_min_age);
 
-        /// ** Do some sanity checks on the config ***
+        // Do some sanity checks on the config
         anyhow::ensure!(
             new_role != junior_role,
             "New and Junior roles cannot be the same! ({:?})",
@@ -173,12 +97,12 @@ where
             "Member count and number of members in cache differ"
         );
 
-        /// ** Fetch the members ***
-        /// TODO: The cache is primed when joining the guild and maintained by
-        /// events.       However, this is only good for 1000 or so
-        /// members. If we reach that       level this functionality
-        /// should be converted to be event driven when       users
-        /// interact with the server
+        // Fetch the members
+        // TODO: The cache is primed when joining the guild and maintained by
+        // events.       However, this is only good for 1000 or so
+        // members. If we reach that       level this functionality
+        // should be converted to be event driven when       users
+        // interact with the server
         let members = guild
             .members
             .iter_mut()
@@ -219,8 +143,8 @@ where
                 if message_count >= new_chat_min_messages {
                     if !is_junior && !is_full {
                         progress_chan
-                            .send_async(format!("Promoting {} to junior", m))
-                            .await;
+                            .send_async(format!("Promoting {} to {}", m, junior_role.name))
+                            .await?;
                         m.add_role(ctx, junior_role.id)
                             .await
                             .context("Adding junior role")?;
@@ -265,8 +189,8 @@ where
                     if message_count >= junior_chat_min_messages {
                         if !is_full {
                             progress_chan
-                                .send_async(format!("Promoting {} to full", m))
-                                .await;
+                                .send_async(format!("Promoting {} to {}", m, full_role.name))
+                                .await?;
                             m.add_role(ctx, full_role.id)
                                 .await
                                 .context("Adding full role")?;
@@ -297,9 +221,9 @@ where
                 promote_stats.unqualified += 1;
             }
         }
-        progress_chan.send_async(format!("{}", promote_stats)).await;
+        progress_chan.send_async(format!("{}", promote_stats)).await?;
 
-        Ok(PromoteResult::Ok(promote_stats))
+        Ok(OptionallyConfiguredResult::Ok(promote_stats))
     }
 
     with_progress_embed(

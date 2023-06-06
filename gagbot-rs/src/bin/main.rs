@@ -52,7 +52,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use futures::future::join;
 use gagbot_rs::{
-    commands::promote::{run_promote, PromoteResult},
+    commands::{promote::{run_promote, OptionallyConfiguredResult}, log::log, greet::run_greet},
     db::{
         queries::{
             self,
@@ -359,10 +359,10 @@ async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> anyhow::
                 msg.push('\n');
 
                 match run_promote(&data, &ctx, guild.id.into(), None).await {
-                    Ok(PromoteResult::Ok(promotions)) => {
+                    Ok(OptionallyConfiguredResult::Ok(promotions)) => {
                         write!(&mut msg, ":white_check_mark: {}", promotions)?;
                     },
-                    Ok(PromoteResult::Unconfigured(key)) => {
+                    Ok(OptionallyConfiguredResult::Unconfigured(key)) => {
                         err_lvl = err_lvl.max(1);
                         write!(&mut msg, ":grey_question: Promote not configured: {}", key)?;
                     },
@@ -562,9 +562,11 @@ async fn handle_guild_create<'a>(
             .map(|c| c.id)
             .map(|v| v.into()));
     if let Some(chan) = channel_id {
+        let now = Utc::now().timestamp();
         Embed::default()
+            .random_color()
             .title("I'm here")
-            .description(format!("<t:{}>", Utc::now().timestamp()))
+            .description(format!("<t:{}>", now))
             .send_in_channel(chan, &ctx.http)
             .await?;
     } else {
@@ -624,20 +626,18 @@ async fn handle_guild_member_add(
 ) -> anyhow::Result<()> {
     let guild_id = new_member.guild_id;
     let user = &new_member.user;
-    if let Some((channel_id, embed)) = data.get_greet(guild_id.into(), user).await? {
-        embed.send_in_channel(channel_id, &ctx.http).await?;
-    }
-    Ok(
-        if let Some(channel_id) = data
-            .log_channel(guild_id.into(), vec![LogChannel::JoiningAndLeaving])
-            .await?
-        {
-            Embed::join()
-                .description(format!("`{}` joined the server.", user.tag()))
-                .send_in_channel(channel_id, &ctx.http)
-                .await?;
-        },
-    )
+    
+    // Join because we want to log even if the greet errors out and vice versa
+    let (greet_r, log_r) = join(
+        run_greet(&data, &ctx, guild_id.into(), new_member.clone(), true),
+        log(&data, &ctx, guild_id.into(), vec![LogChannel::JoiningAndLeaving],
+            Embed::join().description(format!("`{}` joined the server.", user.tag()))),
+    ).await;
+        
+    greet_r?;
+    log_r?;
+
+    Ok(())
 }
 
 async fn handle_message_delete(

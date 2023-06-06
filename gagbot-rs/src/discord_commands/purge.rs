@@ -12,7 +12,7 @@ use crate::{
     db::queries::config::LogChannel,
     message_log::LogType,
     permissions::{Permission, PermissionCheck},
-    with_progress_embed, BotData, Context, Error, GuildId, UserId,
+    with_progress_embed, BotData, Context, Error, GuildId, UserId, commands::promote::OptionallyConfiguredResult,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
@@ -47,7 +47,7 @@ pub async fn purge<'a>(
             u64,
         ),
         progress_chan: flume::Sender<String>,
-    ) -> Result<(), Error>
+    ) -> Result<OptionallyConfiguredResult<()>, Error>
     where
         Ctx: 'a + CacheHttp + AsRef<Http> + AsRef<Cache>,
     {
@@ -144,7 +144,7 @@ pub async fn purge<'a>(
         .await?;
         progress_chan.send_async("Done".to_string()).await?;
 
-        Ok(())
+        Ok(OptionallyConfiguredResult::Ok(()))
     }
 
     const PURGE_TITLE: &str = "Purge";
