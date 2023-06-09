@@ -1,10 +1,10 @@
-use std::fmt::Write;
+use std::fmt::{Write, Display};
 
 use humansize::{make_format, BINARY};
 
 use crate::{
     permissions::{Permission, PermissionCheck},
-    Context, Embed, Error,
+    Context, Embed, Error, db::queries::config::ConfigKey, get_config_u64_option, get_config_role_option, get_config_chan_option, get_config_string_option,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
@@ -95,6 +95,143 @@ pub async fn get_disk_space(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     embed.send(&ctx).await?;
+
+    Ok(())
+}
+
+#[poise::command(prefix_command, slash_command, category = "Utils")]
+/// Check all configurable features
+pub async fn check_config(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .expect("missing guild in 'guild_only' command")
+        .into();
+
+    ctx.require_permission(Permission::ConfigManage).await?;
+
+    const EMOJI_RED_X: &str = ":x:";
+    const EMOJI_GREEN_TICK: &str = ":white_check_mark:";
+
+    let mut msg = "".to_string();    
+
+    fn check_cfg<T: Display, W: Write>(cfg: Option<T>, key: ConfigKey, mut msg: W) -> anyhow::Result<()> {
+        let name = key.name();
+        let description = key.description();
+        let (emoji, not, value) = if let Some(cfg) = cfg {
+            (EMOJI_GREEN_TICK, "", Some(cfg.to_string()))
+        } else {
+            (EMOJI_RED_X, "not ", None)
+        };
+
+        write!(msg, "## {emoji} {name} {not}configured\n> {description}\n")?;
+        if let Some(value) = value {
+            write!(msg, "*Value:* {value}\n")?;
+        }
+        Ok(())
+    }
+
+    let data = ctx.data();
+    
+    write!(&mut msg, "# Greet config\n")?;
+    check_cfg(
+        get_config_string_option!(data, guild_id, ConfigKey::GreetMessage),
+        ConfigKey::GreetMessage,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::GreetChannel),
+        ConfigKey::GreetChannel,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_string_option!(data, guild_id, ConfigKey::GreetWelcomeMessage),
+        ConfigKey::GreetWelcomeMessage,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::GreetWelcomeChannel),
+        ConfigKey::GreetWelcomeChannel,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_role_option!(ctx, data, guild_id, ConfigKey::GreetRole),
+        ConfigKey::GreetRole,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_role_option!(ctx, data, guild_id, ConfigKey::GreetDefaultRole),
+        ConfigKey::GreetDefaultRole,
+        &mut msg)?;
+
+
+    write!(&mut msg, "# Logging config\n")?;        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::LoggingGeneral),
+        ConfigKey::LoggingGeneral,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::LoggingEditsAndDeletes),
+        ConfigKey::LoggingEditsAndDeletes,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::LoggingJoiningAndLeaving),
+        ConfigKey::LoggingJoiningAndLeaving,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::LoggingErrors),
+        ConfigKey::LoggingErrors,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::LoggingVoiceActivity),
+        ConfigKey::LoggingVoiceActivity,
+        &mut msg)?;
+
+    write!(&mut msg, "# Promote config\n")?; 
+        
+    check_cfg(
+        get_config_role_option!(ctx, data, guild_id, ConfigKey::PromoteJuniorRole),
+        ConfigKey::PromoteJuniorRole,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_role_option!(ctx, data, guild_id, ConfigKey::PromoteFullRole),
+        ConfigKey::PromoteFullRole,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::PromoteNewChatChannel),
+        ConfigKey::PromoteNewChatChannel,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_chan_option!(ctx, data, guild_id, ConfigKey::PromoteJuniorChatChannel),
+        ConfigKey::PromoteJuniorChatChannel,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_u64_option!(data, guild_id, ConfigKey::PromoteNewChatMinMessages),
+        ConfigKey::PromoteNewChatMinMessages,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_u64_option!(data, guild_id, ConfigKey::PromoteJuniorChatMinMessages),
+        ConfigKey::PromoteJuniorChatMinMessages,
+        &mut msg)?;
+        
+    check_cfg(
+        get_config_u64_option!(data, guild_id, ConfigKey::PromoteJuniorMinAge),
+        ConfigKey::PromoteJuniorMinAge,
+        &mut msg)?;
+        
+
+    Embed::default()
+        .description(msg)
+        .send(&ctx)
+        .await?;
 
     Ok(())
 }

@@ -6,6 +6,7 @@ pub mod log;
 #[macro_export]
 macro_rules! get_config_string_option {
     ($data:expr, $guild_id: expr, $key:expr) => {{
+        use anyhow::Context as _;
         $data
             .get_config_string($guild_id, $key)
             .await
@@ -29,6 +30,9 @@ macro_rules! get_config_string {
 #[macro_export]
 macro_rules! get_config_chan_option {
     ($ctx:expr, $data:expr, $guild_id: expr, $key:expr) => {{
+        use anyhow::Context as _;
+        use poise::serenity_prelude::{ ChannelId, Channel, ChannelType };
+        use std::str::FromStr;
         let string = crate::get_config_string_option!($data, $guild_id, $key);
         if let Some(string) = string {
             let id = ChannelId::from_str(&string)
@@ -73,6 +77,9 @@ macro_rules! get_config_chan {
 #[macro_export]
 macro_rules! get_config_role_option {
     ($ctx:expr, $data:expr, $guild_id: expr, $key:expr) => {{
+        use anyhow::Context as _;
+        use poise::serenity_prelude::{ RoleId };
+        use std::str::FromStr;
         let string = crate::get_config_string_option!($data, $guild_id, $key);
         if let Some(string) = string {
             let id = RoleId::from_str(&string)
@@ -113,6 +120,8 @@ macro_rules! get_config_role {
 #[macro_export]
 macro_rules! get_config_u64_option {
     ($data:expr, $guild_id:expr, $key:expr) => {{
+        use anyhow::Context as _;
+        use std::str::FromStr;
         let string = crate::get_config_string_option!($data, $guild_id, $key);
         if let Some(string) = string {
             Some(u64::from_str(&string).with_context(|| {

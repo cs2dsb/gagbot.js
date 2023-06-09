@@ -1,14 +1,10 @@
-use std::{
-    str::FromStr,
-};
-
 use anyhow::Context as AnyhowContext;
-use poise::serenity_prelude::{Cache, CacheHttp, Channel, ChannelType, Http, Member};
+use poise::serenity_prelude::{Cache, CacheHttp, Http, Member};
 
 use crate::{
     get_config_string, get_config_role, get_config_chan,
     db::queries::config::{ConfigKey, LogChannel},
-    with_progress_embed, BotData, ChannelId, GuildId, RoleId, expand_greeting_template, Embed,
+    with_progress_embed, BotData, GuildId, expand_greeting_template, Embed,
 };
 
 

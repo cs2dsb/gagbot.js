@@ -33,6 +33,7 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         get_config(),
         set_config(),
         delete_config(),
+        check_config(),
         test_embed(),
         test_embed_success(),
         test_embed_error(),

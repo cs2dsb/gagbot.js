@@ -1,17 +1,16 @@
 use std::{
     fmt::{self, Debug},
-    str::FromStr,
 };
 
 use anyhow::Context as AnyhowContext;
 use chrono::{Days, Utc};
-use poise::serenity_prelude::{Cache, CacheHttp, Channel, ChannelType, Http, Member};
+use poise::serenity_prelude::{Cache, CacheHttp,  Http, Member};
 use tracing::debug;
 
 use crate::{
     get_config_role, get_config_chan, get_config_u64,
     db::queries::config::{ConfigKey, LogChannel},
-    with_progress_embed, BotData, ChannelId, GuildId, RoleId,
+    with_progress_embed, BotData, GuildId, 
 };
 
 #[derive(Debug, Default)]
