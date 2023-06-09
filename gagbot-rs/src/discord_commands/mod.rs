@@ -52,3 +52,21 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
         add_member(),
     ]
 }
+
+pub fn chihuahua_commands() -> Vec<Command<BotData, Error>> {
+    vec![
+        help(),
+        ping(),
+        get_config(),
+        set_config(),
+        delete_config(),
+        set_log(),
+        get_permissions(),
+        grant_permission(),
+        revoke_permission(),
+        purge_permission(),
+        get_table_sizes(),
+        get_disk_space(),
+        config_help(),
+    ]
+}

@@ -52,7 +52,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use futures::future::join;
 use gagbot_rs::{
-    commands::{promote::{run_promote, OptionallyConfiguredResult}, log::log, greet::run_greet},
+    commands::{promote::{run_promote, OptionallyConfiguredResult}, log::log, greet::{run_greet, GreetBehaviour}},
     db::{
         queries::{
             self,
@@ -107,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Cli::parse();
     let background_task_frequency = Duration::from_secs(args.background_task_frequency_seconds);
+    let discord_token = &args.discord_token;
     debug!("Parsed args: {:#?}", args);
 
     // Open the DB before launching the task so we can fail before trying to connect
@@ -214,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
                 // }
             }
         }
-        debug!("DB TAST: exiting");
+        debug!("DB TASK: exiting");
 
         close_database(sqlite_con)?;
 
@@ -233,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
     let framework = poise::Framework::builder()
         .client_settings(|b| b.cache_settings(|s| s.max_messages(CACHE_MAX_MESSAGES)))
         .options(options)
-        .token(args.discord_token)
+        .token(discord_token)
         // TODO: are all needed?
         .intents(
             GatewayIntents::GUILDS
@@ -629,7 +630,7 @@ async fn handle_guild_member_add(
     
     // Join because we want to log even if the greet errors out and vice versa
     let (greet_r, log_r) = join(
-        run_greet(&data, &ctx, guild_id.into(), new_member.clone(), true),
+        run_greet(&data, &ctx, guild_id.into(), new_member.clone(), GreetBehaviour::Both),
         log(&data, &ctx, guild_id.into(), vec![LogChannel::JoiningAndLeaving],
             Embed::join().description(format!("`{}` joined the server.", user.tag()))),
     ).await;

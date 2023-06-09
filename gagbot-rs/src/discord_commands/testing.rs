@@ -8,7 +8,7 @@ use poise::{
 use tracing::error;
 
 use crate::{
-    Context, Embed, EmbedFlavour, Error, commands::{greet::run_greet, promote::OptionallyConfiguredResult},
+    Context, Embed, EmbedFlavour, Error, commands::{greet::{run_greet, GreetBehaviour}, promote::OptionallyConfiguredResult},
 };
 
 #[poise::command(prefix_command, slash_command, category = "Testing")]
@@ -86,7 +86,7 @@ pub async fn test_greet_message(
     // 0 = ok, 1 = warn, 2 = error
     let mut err_lvl = 0;
 
-    match run_greet(ctx.data(), &ctx, guild_id.into(), member.into_owned(), false).await {
+    match run_greet(ctx.data(), &ctx, guild_id.into(), member.into_owned(), GreetBehaviour::Greet).await {
         Ok(OptionallyConfiguredResult::Ok(_)) => {
             write!(&mut msg, ":white_check_mark: Done")?;
         }
