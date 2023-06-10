@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../../../../.cargo/registry/src/github.com-1ecc6299db9ec823/serenity-0.11.5"
+		},
+		{
+			"path": "../../../../.cargo/registry/src/github.com-1ecc6299db9ec823/poise-0.5.2"
 		}
 	],
 	"settings": {

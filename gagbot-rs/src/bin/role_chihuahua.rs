@@ -1,5 +1,6 @@
 use std::{num::ParseIntError, time::Duration};
 
+use anyhow::Context as _;
 use chrono::{Utc};
 use clap::Parser;
 use dotenv::dotenv;
@@ -273,7 +274,10 @@ async fn handle_guild_create<'a>(
     framework: FrameworkContext<'a, BotData, Error>,
     guild: &Guild,
 ) -> anyhow::Result<()> {
-    poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id).await?;
+    poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id)        
+        .await
+        .context("register_in_guild")?;
+
     let channel_id = data
         .general_log_channel(guild.id.into())
         .await?
@@ -289,7 +293,8 @@ async fn handle_guild_create<'a>(
             .title("I'm here")
             .description(format!("<t:{}>", now))
             .send_in_channel(chan, &ctx.http)
-            .await?;
+            .await
+            .context("send_in_channel (I'm here)")?;
     } else {
         warn!("Failed to get log, system or default channels to log to");
     }

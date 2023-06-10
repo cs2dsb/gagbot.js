@@ -3,6 +3,8 @@ use std::{
     str::{self, FromStr},
 };
 
+use anyhow::Context as _;
+
 use async_trait::async_trait;
 use poise::{serenity_prelude::Timestamp, ChoiceParameter};
 use rusqlite::{
@@ -47,7 +49,10 @@ impl<'a> PermissionCheck for &'a Context<'a> {
         if guild.owner_id != caller.user.id {
             self.data()
                 .require_permission(&guild, &caller, permission)
-                .await?;
+                .await
+                // TODO: better logging around this - errors here just come out as a message "require_permissions"
+                //       nothing in the log, nothing else in the message... not good
+                .context("require_permission")?;
         }
 
         Ok(())

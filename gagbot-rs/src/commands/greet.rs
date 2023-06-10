@@ -1,5 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use poise::serenity_prelude::{Cache, CacheHttp,   Http, Member};
+use tracing::debug;
 
 use crate::{
     get_config_string, get_config_chan,
@@ -47,10 +48,15 @@ where
     if behaviour.apply_role() {
         if let Some(default_role) = get_config_role_option!(ctx, data, guild_id, ConfigKey::GreetDefaultRole) {
             if !member.roles.contains(&default_role.id) {
+                debug!("Adding GreetDefaultRole to {}", member);
                 member.add_role(ctx, default_role.id)
                     .await
                     .context("Adding default role")?;
+            } else {
+                debug!("Not adding GreetDefaultRole to {}, it already exists", member);
             }
+        } else {
+            debug!("GreetDefaultRole not configured");
         }
     }
 
@@ -64,6 +70,7 @@ where
     let greet_channel = get_config_chan!(ctx, data, guild_id, ConfigKey::GreetChannel);
 
     // Send the greeting
+    debug!("Greeting {}", member);
     expand_greeting_template(&member.user, &mut greet_message);
     Embed::default()
         .content(format!("{member}"))
