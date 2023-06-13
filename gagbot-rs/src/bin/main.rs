@@ -1,49 +1,6 @@
 // TODO:
 //
-// on_messageReactionAdd
-// Add role corresponding to emoji
-// on_messageReactionRemove
-// Remove role corresponding to emoji
-//
-//
-// admin
 // "prune", "Kick inactive users", "gagbot:admin:prune"
-//
-// core
-// "am", "Add
-// a member.", "gagbot:greet:addmember", [user] "greet", "Send a greeting to the
-// given user.", "gagbot:greet:send", [user] "greetchannel", "Set the greeting
-// channel.", "gagbot:greet:set", [channel] "greetdelete", "Stop greeting
-// users.", "gagbot:greet:delete" "greetmessage", "Set the greeting message.",
-// "gagbot:greet:set", [str] "greetrole", "Set the member role.",
-// "gagbot:greet:set", [role] "greetwelcomechannel", "Set the welcome channel.",
-// "gagbot:greet:set", [channel] "greetwelcomemessage", "Set the greeting
-// welcome message (for after !am).", "gagbot:greet:set", [str] "promote",
-// "Promote eligible members: New to junior members when they have > 2 roles
-// set. Junior to full when they've been active on the server for > 3 days.
-// Optionally pass a user to promote them without any checks",
-// "gagbot:greet:promotemembers", [optional(user)] "promoteroles", "Set the
-// promotion member roles. Example: `!promoteroles @Junior Member @Member`",
-// "gagbot:promoteroles:set", [role, role] "promoterules", "Set the promotion
-// rules. \nUsage `#new-member-channel-to-scan #junior-member-channel-to-scan
-// min-new-member-messages min-junior-member-messages
-// min-junior-member-age-in-days`. \nExample: `!promoterules #introduce-yourself
-// #general 1 10 3`", "gagbot:promoterrules:set", [channel, channel, num, num,
-// num] "log", "Set which events to log in which channel.",
-// "gagbot:logging:channel", { 'cmd': choice(i('set'), i('list'), i('check'),
-// i('delete')), 'channel': optional(channel), 'types':
-// optional(some(choice(i('message'), i('voice'), i('member'), i('error')))) }
-// 'rrbind', 'Bind a roleset to a message.', 'gagbot:reactionroles:bind', {
-// 'set': str, 'channel': channel, 'message': id } 'rrset', 'Modify rolesets.',
-// 'gagbot:reactionroles:set', { 'cmd': choice(i('add'), i('delete'),
-// i('clear'), i('update'), i('list'), i('togglex')),'set': str, 'react':
-// optional(choice(emoji, str)),'role': optional(role)} 'rrunbind', 'Unbind a
-// roleset from it\'s bound message.', 'gagbot:reactionroles:bind' 'rrupdate',
-// 'Ensure all the correct roles are on the react menu for a given roleset.',
-// 'gagbot:reactionroles:bind', { 'set': str } "tafk","Toggle whether or not to
-// move inactive voice users to the AFK
-// channel.","gagbot:voice:toggleafk",{channel: optional(id)}
-//
 
 use std::{fmt::{Write, Display}, num::ParseIntError, time::Duration};
 
