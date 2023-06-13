@@ -1,4 +1,0 @@
-{
-  "errorMessage": "_Womp Womp_",
-  "modules": ["logging", "admin", "greet", "reactionroles", "voice"]
-}
