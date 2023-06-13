@@ -9,13 +9,14 @@ set -o nounset
 # Exit when a piped command returns a non-zero exit code
 set -o pipefail
 
-# Script to rebase master onto the deploy branch
+# Script to rebase the current branch onto the deploy branch
 
 
 readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
 cd $repo_dir
 
+readonly original_branch=`git rev-parse --abbrev-ref HEAD`;
 git checkout deploy
-git rebase master
+git rebase "$original_branch"
 git push
-git checkout master
+git checkout "$original_branch"

@@ -7,3 +7,5 @@
 /config.json
 /third_party/
 /prod_dump/
+*.sqlite*
+/target/

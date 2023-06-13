@@ -5,18 +5,16 @@ use dotenv::dotenv;
 use futures::TryStreamExt;
 use gagbot_rs::{db::queries::config::*, *};
 use mongodb::{
-    bson::{doc, oid::ObjectId, Bson as BsonValue},
+    bson::{doc, oid::ObjectId, Bson as BsonValue, Document},
     options::{ClientOptions, ServerApi, ServerApiVersion},
     Client,
 };
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, error};
 #[derive(Debug, Parser)]
 #[clap(name = "gagbot.rs")]
 struct Cli {
-    #[clap(long, env)]
-    discord_token: String,
     #[clap(long, env)]
     mongo_db_uri: String,
     #[clap(long, env)]
@@ -35,11 +33,11 @@ pub struct Permissions {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Greet {
-    pub message: String,
-    pub role: String,
-    pub channel: String,
-    pub welcomechannel: String,
-    pub welcomemessage: String,
+    pub message: Option<String>,
+    pub role: Option<String>,
+    pub channel: Option<String>,
+    pub welcomechannel: Option<String>,
+    pub welcomemessage: Option<String>,
 
     #[serde(flatten, skip_serializing)]
     pub unrecognized_fields: HashMap<String, BsonValue>,
@@ -186,12 +184,30 @@ async fn main() -> Result<(), Error> {
 
     let mongo_db = mongo_client.database(&args.mongo_db_database);
 
-    let guilds: Vec<Guild> = mongo_db
+    let guilds: Vec<Guild> = match mongo_db
         .collection(Guild::collection())
         .find(None, None)
         .await?
-        .try_collect()
-        .await?;
+        .try_collect()        
+        .await
+        .context("Fetching and parsing Guild::collection()")
+    {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            let docs: Result<Vec<Document>, _> = mongo_db
+                .collection(Guild::collection())
+                .find(None, None)
+                .await?
+                .try_collect()        
+                .await
+                .context("Fetching Guild::collection()");
+
+            if let Ok(docs) = docs {
+                error!("Document that failed parsing: {:#?}", docs);
+            }
+            Err(e)
+        },
+    }?;
 
     let log_channels = {
         let rows: Vec<LogChannels> = mongo_db
@@ -258,19 +274,21 @@ async fn main() -> Result<(), Error> {
             VALUES (?1, ?2, ?3);",
             )?;
 
-            config_stmt.execute(params![guild_id, ConfigKey::GreetMessage, &greet.message])?;
-            config_stmt.execute(params![guild_id, ConfigKey::GreetChannel, &greet.channel])?;
-            config_stmt.execute(params![guild_id, ConfigKey::GreetRole, &greet.role])?;
-            config_stmt.execute(params![
-                guild_id,
-                ConfigKey::GreetWelcomeMessage,
-                &greet.welcomemessage
-            ])?;
-            config_stmt.execute(params![
-                guild_id,
-                ConfigKey::GreetWelcomeChannel,
-                &greet.welcomechannel
-            ])?;
+            if let Some(message) = greet.message.as_ref() {
+                config_stmt.execute(params![guild_id, ConfigKey::GreetMessage, message])?;
+            }
+            if let Some(channel) = greet.channel.as_ref() {
+                config_stmt.execute(params![guild_id, ConfigKey::GreetChannel, channel])?;
+            }
+            if let Some(role) = greet.role.as_ref() {
+                config_stmt.execute(params![guild_id, ConfigKey::GreetRole, role])?;
+            }
+            if let Some(welcomemessage) = greet.welcomemessage.as_ref() {
+                config_stmt.execute(params![guild_id, ConfigKey::GreetWelcomeMessage, welcomemessage])?;
+            }
+            if let Some(welcomechannel) = greet.welcomechannel.as_ref() {
+                config_stmt.execute(params![guild_id, ConfigKey::GreetWelcomeChannel, welcomechannel])?;
+            }
         }
 
         if guild.data.promote_roles.is_some() || guild.data.promote_rules.is_some() {

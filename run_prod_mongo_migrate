@@ -14,8 +14,5 @@ readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
 
 cd "$repo_dir"
 
-source .prod_env
-export MONGO_DB_URI
-
 RUST_LOG=debug,gagbot_rs=debug,$bin=debug,serenity=debug \
     cargo run --bin $bin
