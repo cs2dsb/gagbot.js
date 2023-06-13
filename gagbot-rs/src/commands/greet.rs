@@ -1,11 +1,10 @@
-use anyhow::Context as AnyhowContext;
 use poise::serenity_prelude::{Cache, CacheHttp,   Http, Member};
 use tracing::debug;
 
 use crate::{
     get_config_string, get_config_chan,
     db::queries::config::{ConfigKey},
-    BotData,  GuildId,  expand_greeting_template, Embed, get_config_role_option,
+    BotData,  GuildId,  expand_greeting_template, Embed, get_config_role_option, ErrorContext, Error
 };
 
 
@@ -40,7 +39,7 @@ pub async fn run_greet<'a, 'b, T>(
     guild_id: GuildId,
     mut member: Member,
     behaviour: GreetBehaviour,
-) -> anyhow::Result<OptionallyConfiguredResult<()>>
+) -> Result<OptionallyConfiguredResult<()>, Error>
 where
     T: 'a + Clone + CacheHttp + AsRef<Cache> + AsRef<Http>,
 {

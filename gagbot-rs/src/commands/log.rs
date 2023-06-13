@@ -2,7 +2,7 @@ use poise::serenity_prelude::{Cache, CacheHttp, Http};
 
 use crate::{
     db::queries::config::{LogChannel},
-    BotData, GuildId, Embed,
+    BotData, GuildId, Embed, Error,
 };
 
 
@@ -15,7 +15,7 @@ pub async fn log<'a, 'b, T>(
     guild_id: GuildId,
     log_channel: Vec<LogChannel>,
     embed: Embed,
-) -> anyhow::Result<OptionallyConfiguredResult<()>>
+) -> Result<OptionallyConfiguredResult<()>, Error>
 where
 T: 'a + Clone + CacheHttp + AsRef<Cache> + AsRef<Http>,
 {

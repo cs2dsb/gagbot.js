@@ -1,6 +1,6 @@
 use poise::{self, Command};
 
-use crate::{BotData, Error};
+use crate::{BotData, PoiseError};
 
 mod testing;
 use testing::*;
@@ -26,7 +26,7 @@ use purge::*;
 mod add_member;
 use add_member::*;
 
-pub fn commands() -> Vec<Command<BotData, Error>> {
+pub fn commands() -> Vec<Command<BotData, PoiseError>> {
     vec![
         help(),
         ping(),
@@ -53,7 +53,7 @@ pub fn commands() -> Vec<Command<BotData, Error>> {
     ]
 }
 
-pub fn chihuahua_commands() -> Vec<Command<BotData, Error>> {
+pub fn chihuahua_commands() -> Vec<Command<BotData, PoiseError>> {
     vec![
         help(),
         ping(),

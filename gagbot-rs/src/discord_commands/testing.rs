@@ -8,12 +8,12 @@ use poise::{
 use tracing::error;
 
 use crate::{
-    Context, Embed, EmbedFlavour, Error, commands::{greet::{run_greet, GreetBehaviour}, promote::OptionallyConfiguredResult},
+    Context, Embed, EmbedFlavour, PoiseError, commands::{greet::{run_greet, GreetBehaviour}, promote::OptionallyConfiguredResult},
 };
 
 #[poise::command(prefix_command, slash_command, category = "Testing")]
 /// Ping pong
-pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn ping(ctx: Context<'_>) -> Result<(), PoiseError> {
     Embed::default().description("Pong!").send(&ctx).await?;
 
     Ok(())
@@ -30,7 +30,7 @@ pub async fn test_embed(
     #[description = "Colour of the embed left border as a hex number (0xEBC634). Overrides flavour colour"]
     color: Option<i32>,
     #[description = "Thumbnail to place in the top right"] thumbnail_url: Option<String>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     let mut embed = Embed::default();
     if let Some(color) = color {
         embed.color = Some(Color::from(color));
@@ -48,7 +48,7 @@ pub async fn test_embed(
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
 /// Displays a generic success message
-pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), PoiseError> {
     Embed::success().send(&ctx).await?;
 
     Ok(())
@@ -56,7 +56,7 @@ pub async fn test_embed_success(ctx: Context<'_>) -> Result<(), Error> {
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Testing")]
 /// Displays a generic error message
-pub async fn test_embed_error(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn test_embed_error(ctx: Context<'_>) -> Result<(), PoiseError> {
     Embed::error().send(&ctx).await?;
 
     Ok(())
@@ -70,7 +70,7 @@ pub async fn test_greet_message(
 
     #[description = "Member to greet. Defaults to your user if not provided"] 
     member: Option<Member>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");

@@ -148,7 +148,7 @@ impl RoleSets {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Error> {
     dotenv()?;
 
     tracing::subscriber::set_global_default(

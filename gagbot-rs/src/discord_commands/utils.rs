@@ -4,7 +4,7 @@ use humansize::{make_format, BINARY};
 
 use crate::{
     permissions::{Permission, PermissionCheck},
-    Context, Embed, Error, db::queries::config::ConfigKey, get_config_u64_option, get_config_role_option, get_config_chan_option, get_config_string_option,
+    Context, Embed, PoiseError, db::queries::config::ConfigKey, get_config_u64_option, get_config_role_option, get_config_chan_option, get_config_string_option, Error,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
@@ -12,14 +12,14 @@ pub async fn help(
     ctx: Context<'_>,
 
     #[description = "Command to display specific information about"] command: Option<String>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     poise::builtins::help(ctx, command.as_deref(), Default::default()).await?;
     Ok(())
 }
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
 /// Get the sizes of each database table
-pub async fn get_table_sizes(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn get_table_sizes(ctx: Context<'_>) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let mut tables = ctx.data().db_table_sizes().await?;
@@ -77,7 +77,7 @@ pub async fn get_table_sizes(ctx: Context<'_>) -> Result<(), Error> {
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
 /// Get the free space on the disk the database file is located on
-pub async fn get_disk_space(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn get_disk_space(ctx: Context<'_>) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let mut embed = Embed::success().title("Disk space");
@@ -101,12 +101,12 @@ pub async fn get_disk_space(ctx: Context<'_>) -> Result<(), Error> {
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
 /// Check all configurable features
-pub async fn check_config(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn check_config(ctx: Context<'_>) -> Result<(), PoiseError> {
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command")
         .into();
-
+    
     ctx.require_permission(Permission::ConfigManage).await?;
 
     const EMOJI_RED_X: &str = ":x:";
@@ -114,7 +114,7 @@ pub async fn check_config(ctx: Context<'_>) -> Result<(), Error> {
 
     let mut msg = "".to_string();    
 
-    fn check_cfg<T: Display, W: Write>(cfg: Option<T>, key: ConfigKey, mut msg: W) -> anyhow::Result<()> {
+    fn check_cfg<T: Display, W: Write>(cfg: Option<T>, key: ConfigKey, mut msg: W) -> Result<(), Error> {
         let name = key.name();
         let description = key.description();
         let (emoji, not, value) = if let Some(cfg) = cfg {

@@ -3,18 +3,16 @@ use std::{
     str::{self, FromStr},
 };
 
-use anyhow::Context as _;
-
 use async_trait::async_trait;
 use poise::{serenity_prelude::Timestamp, ChoiceParameter};
 use rusqlite::{
     params,
     types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef},
-    Connection, ToSql,
+    Connection, ToSql, Error as RusqliteError
 };
-use tracing::debug;
+use tracing::{debug, error};
 
-use crate::{Context, GuildId, RoleId};
+use crate::{Context, GuildId, RoleId, Error};
 
 #[derive(Debug)]
 pub enum PermissionType {
@@ -33,12 +31,12 @@ impl ToSql for PermissionType {
 
 #[async_trait]
 pub trait PermissionCheck {
-    async fn require_permission(self, permission: Permission) -> anyhow::Result<()>;
+    async fn require_permission(self, permission: Permission) -> Result<(), Error>;
 }
 
 #[async_trait]
 impl<'a> PermissionCheck for &'a Context<'a> {
-    async fn require_permission(self, permission: Permission) -> anyhow::Result<()> {
+    async fn require_permission(self, permission: Permission) -> Result<(), Error> {
         let guild = self
             .guild()
             .ok_or(anyhow::anyhow!("missing guild in require_permission"))?;
@@ -46,13 +44,13 @@ impl<'a> PermissionCheck for &'a Context<'a> {
             "missing author_member in require_permission"
         ))?;
 
-        if guild.owner_id != caller.user.id {
+        // Debug assertions requires that the bot permission checks get called even when debugging
+        // on the users own server. We do need the owner check for live though in case the permission
+        // data gets messed up
+        if cfg!(debug_assertions) || guild.owner_id != caller.user.id {
             self.data()
                 .require_permission(&guild, &caller, permission)
-                .await
-                // TODO: better logging around this - errors here just come out as a message "require_permissions"
-                //       nothing in the log, nothing else in the message... not good
-                .context("require_permission")?;
+                .await?;
         }
 
         Ok(())
@@ -89,10 +87,12 @@ impl ToSql for Permission {
 impl FromSql for Permission {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         if let ValueRef::Text(v) = value {
-            Ok(
-                Self::from_str(str::from_utf8(v).map_err(|e| FromSqlError::Other(Box::new(e)))?)
-                    .map_err(|e| FromSqlError::Other(Box::new(e)))?,
-            )
+            let string = str::from_utf8(v).map_err(|e| FromSqlError::Other(Box::new(e)))?;
+            match Self::from_str(string) {
+                Ok(r) => Ok(r),
+                Err(_) => Err(
+                    FromSqlError::Other(anyhow::anyhow!("String \"{string}\" does not represent a valid Permission").into()))
+            }
         } else {
             Err(FromSqlError::InvalidType)
         }
@@ -115,7 +115,7 @@ pub fn get(
     db: &Connection,
     guild_id: GuildId,
     sorted_roles: Vec<RoleId>,
-) -> anyhow::Result<Vec<EffectivePermission>> {
+) -> Result<Vec<EffectivePermission>, Error> {
     if sorted_roles.len() == 0 {
         return Ok(vec![]);
     }
@@ -154,6 +154,13 @@ pub fn get(
                 permission: row.get(1)?,
             })
         })?
+        .filter(|r| match r {
+            Err(RusqliteError::FromSqlConversionFailure(_, _, e)) => {
+                error!("Database contains unparsable data: {e}");
+                false
+            },
+            _ => true,
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(permissions)
@@ -165,7 +172,7 @@ pub fn grant(
     role_id: RoleId,
     permission: Permission,
     timestamp: Timestamp,
-) -> anyhow::Result<bool> {
+) -> Result<bool, Error> {
     let mut stmt = db.prepare_cached(
         "INSERT INTO permission (guild_id, discord_id, type, value, last_updated)
                              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -200,7 +207,7 @@ pub fn revoke(
     role_id: RoleId,
     permission: Permission,
     timestamp: Timestamp,
-) -> anyhow::Result<bool> {
+) -> Result<bool, Error> {
     let mut stmt = db.prepare_cached(
         "DELETE FROM permission 
              WHERE guild_id=?1 AND discord_id=?2 AND type=?3 AND value=?4
@@ -229,7 +236,7 @@ pub fn revoke(
     }
 }
 
-pub fn purge(db: &mut Connection, guild_id: GuildId, timestamp: Timestamp) -> anyhow::Result<bool> {
+pub fn purge(db: &mut Connection, guild_id: GuildId, timestamp: Timestamp) -> Result<bool, Error> {
     let tx = db.transaction()?;
 
     {

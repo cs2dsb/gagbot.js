@@ -3,7 +3,7 @@ use poise::{
     serenity_prelude::{ChannelId, UserId},
 };
 
-use crate::{Context, Embed, Error};
+use crate::{Context, Embed, PoiseError};
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Stats")]
 /// Print the total number of messages we've counted from a user
@@ -13,7 +13,7 @@ pub async fn message_count(
     #[description = "(Optionally) The channel you want a message count for"] channel_id: Option<
         ChannelId,
     >,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");

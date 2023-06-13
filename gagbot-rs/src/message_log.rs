@@ -8,7 +8,7 @@ use rusqlite::{
 };
 use tracing::error;
 
-use crate::{ChannelId, GuildId, MessageId, UserId};
+use crate::{ChannelId, GuildId, MessageId, UserId, Error};
 
 #[derive(Debug, PartialEq)]
 pub enum LogType {
@@ -69,7 +69,7 @@ pub fn log(
     timestamp: Timestamp,
     type_: LogType,
     message: Option<Message>,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     // TODO: This is kinda magic behaviour
     if type_ == LogType::Delete {
         if db
@@ -115,7 +115,7 @@ pub fn get(
     guild_id: GuildId,
     channel_id: ChannelId,
     message_id: MessageId,
-) -> anyhow::Result<Vec<MessageLog>> {
+) -> Result<Vec<MessageLog>, Error> {
     let mut stmt = db.prepare_cached(
         "SELECT guild_id, user_id, channel_id, message_id, timestamp, type, message_json FROM message_log
         WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3
@@ -154,7 +154,7 @@ pub fn get_user(
     guild_id: GuildId,
     channel_id: ChannelId,
     message_id: MessageId,
-) -> anyhow::Result<Option<UserId>> {
+) -> Result<Option<UserId>, Error> {
     let mut stmt = db.prepare_cached(
         "SELECT user_id FROM message_log
         WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3 AND user_id IS NOT NULL

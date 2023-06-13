@@ -1,11 +1,10 @@
 use std::{any::type_name, str::FromStr};
 
-use anyhow::Context;
 use poise::{serenity_prelude::Timestamp, ChoiceParameter};
 use rusqlite::{params, types::ToSqlOutput, Connection, OptionalExtension, ToSql};
 use tracing::debug;
 
-use crate::{ChannelId, GuildId};
+use crate::{ChannelId, GuildId, ErrorContext, Error};
 
 #[derive(Debug, Clone, Copy, ChoiceParameter)]
 pub enum ConfigKey {
@@ -133,7 +132,7 @@ pub fn update(
     key: ConfigKey,
     value: &str,
     timestamp: Timestamp,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let mut stmt = db.prepare_cached(
         "INSERT INTO config (guild_id, key, value, last_updated)
                          VALUES (?1, ?2, ?3, ?4)
@@ -149,14 +148,9 @@ pub fn update(
             Ok(())
         }
         Ok(_) => {
-            debug!(
-                "Config value for {} not updated because database version is newer",
-                key
-            );
-            Err(anyhow::anyhow!(
-                "Config value for {} not updated because database version is newer",
-                key
-            ))
+            let msg = format!("Config value for {} not updated because database version is newer", key);
+            debug!(msg);
+            Err(anyhow::anyhow!(msg))?
         }
         Err(e) => {
             debug!("Error updating config value for {}: {:}", key, e);
@@ -170,7 +164,7 @@ pub fn delete(
     guild_id: GuildId,
     key: ConfigKey,
     timestamp: Timestamp,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let mut stmt = db.prepare_cached(
         "DELETE FROM config 
              WHERE guild_id=?1 AND key=?2 AND last_updated<?3",
@@ -193,7 +187,7 @@ pub fn delete(
                     last_updated,
                 );
                 debug!("{}", err);
-                Err(anyhow::anyhow!("{}", err))
+                Err(anyhow::anyhow!("{}", err))?
             } else {
                 // There was nothing to delete
                 Ok(())
@@ -206,10 +200,10 @@ pub fn delete(
     }
 }
 
-pub fn get<T>(db: &Connection, guild_id: GuildId, key: ConfigKey) -> anyhow::Result<Option<T>>
+pub fn get<T>(db: &Connection, guild_id: GuildId, key: ConfigKey) -> Result<Option<T>, Error>
 where
     T: FromStr,
-    <T as FromStr>::Err: 'static + Send + Sync + std::error::Error,
+    <T as FromStr>::Err: Into<Error>,
 {
     // TODO: currently internal db errors are munged together with missing data
     // errors       should probably have some Internal vs User visible error
@@ -244,7 +238,7 @@ pub fn get_log_channel(
     db: &Connection,
     guild_id: GuildId,
     purposes: &[LogChannel],
-) -> anyhow::Result<Option<ChannelId>> {
+) -> Result<Option<ChannelId>, Error> {
     let mut stmt = db.prepare_cached(
         "SELECT value 
         FROM config 
@@ -269,7 +263,7 @@ pub fn get_log_channel(
 pub fn get_greet(
     db: &Connection,
     guild_id: GuildId,
-) -> anyhow::Result<Option<(ChannelId, String)>> {
+) -> Result<Option<(ChannelId, String)>, Error> {
     let channel: Option<ChannelId> = get(db, guild_id, ConfigKey::GreetChannel)?;
     if channel.is_none() {
         return Ok(None);

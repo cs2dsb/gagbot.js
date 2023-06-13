@@ -1,10 +1,9 @@
-use anyhow::Context as AnyhowContext;
 use poise::serenity_prelude::{Cache, CacheHttp, Http, Member};
 
 use crate::{
     get_config_string, get_config_role, get_config_chan,
     db::queries::config::{ConfigKey, LogChannel},
-    with_progress_embed, BotData, GuildId, expand_greeting_template, Embed,
+    with_progress_embed, BotData, GuildId, expand_greeting_template, Embed, ErrorContext, Error
 };
 
 
@@ -15,7 +14,7 @@ pub async fn run_add_member<'a, 'b, T>(
     ctx: &'a T,
     guild_id: GuildId,
     member: Member,
-) -> anyhow::Result<OptionallyConfiguredResult<()>>
+) -> Result<OptionallyConfiguredResult<()>, Error>
 where
     T: 'a + Clone + CacheHttp + AsRef<Cache> + AsRef<Http>,
 {
@@ -25,7 +24,7 @@ where
         ctx: &'a Ctx,
         (guild_id, data, mut member): (GuildId, &'a BotData, Member),
         progress_chan: flume::Sender<String>,
-    ) -> anyhow::Result<OptionallyConfiguredResult<()>>
+    ) -> Result<OptionallyConfiguredResult<()>, Error>
     where
         Ctx: 'a + CacheHttp + AsRef<Http> + AsRef<Cache>,
     {

@@ -7,7 +7,7 @@ use poise::{
 
 use crate::{
     permissions::{Permission, PermissionCheck},
-    Context, Embed, EmbedFlavour, Error,
+    Context, Embed, EmbedFlavour, PoiseError,
 };
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Permission")]
@@ -17,7 +17,7 @@ pub async fn get_permissions(
 
     #[description = "The member to get permissions for. Defaults to your member if not provided"]
     member: Option<Member>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::PermissionManage).await?;
 
     let guild = ctx.guild().expect("missing guild in 'guild_only' command");
@@ -66,7 +66,7 @@ pub async fn grant_permission(
 
     #[description = "The role to grant the permission"] role: RoleId,
     #[description = "The permission to grant"] permission: Permission,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::PermissionManage).await?;
 
     let guild_id = ctx
@@ -100,7 +100,7 @@ pub async fn revoke_permission(
 
     #[description = "The role to revoke the permission from"] role: RoleId,
     #[description = "The permission to revoke"] permission: Permission,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::PermissionManage).await?;
 
     let guild_id = ctx
@@ -129,7 +129,7 @@ pub async fn revoke_permission(
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Permission")]
 /// Purge all permissions
-pub async fn purge_permission(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn purge_permission(ctx: Context<'_>) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::PermissionManage).await?;
 
     let guild_id = ctx

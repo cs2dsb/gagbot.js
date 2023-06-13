@@ -1,13 +1,13 @@
 use rusqlite::{params, Connection};
 
-use crate::{ChannelId, GuildId, UserId};
+use crate::{ChannelId, GuildId, UserId, Error};
 
 pub fn increment(
     db: &Connection,
     guild_id: GuildId,
     user_id: UserId,
     channel_id: ChannelId,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let mut stmt = db.prepare_cached(
         "INSERT INTO message_count (guild_id, user_id, channel_id, message_count) 
         VALUES(?1, ?2, ?3, 1)
@@ -25,7 +25,7 @@ pub fn get(
     guild_id: GuildId,
     user_id: UserId,
     channel_id: Option<ChannelId>,
-) -> anyhow::Result<usize> {
+) -> Result<usize, Error> {
     let mut stmt = db.prepare_cached(if channel_id.is_some() {
         "SELECT COALESCE(SUM(message_count), 0) FROM message_count 
         WHERE guild_id=?1 AND user_id=?2 and channel_id=?3"

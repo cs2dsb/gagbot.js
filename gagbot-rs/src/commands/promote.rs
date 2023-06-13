@@ -2,7 +2,6 @@ use std::{
     fmt::{self, Debug},
 };
 
-use anyhow::Context as AnyhowContext;
 use chrono::{Days, Utc};
 use poise::serenity_prelude::{Cache, CacheHttp,  Http, Member};
 use tracing::debug;
@@ -10,7 +9,7 @@ use tracing::debug;
 use crate::{
     get_config_role, get_config_chan, get_config_u64,
     db::queries::config::{ConfigKey, LogChannel},
-    with_progress_embed, BotData, GuildId, 
+    with_progress_embed, BotData, GuildId, ErrorContext, Error, ensure
 };
 
 #[derive(Debug, Default)]
@@ -40,7 +39,7 @@ pub async fn run_promote<'a, 'b, T>(
     ctx: &'a T,
     guild_id: GuildId,
     force_upgrade_member: Option<Member>,
-) -> anyhow::Result<OptionallyConfiguredResult<PromoteStats>>
+) -> Result<OptionallyConfiguredResult<PromoteStats>, Error>
 where
     T: 'a + Clone + CacheHttp + AsRef<Cache> + AsRef<Http>,
 {
@@ -50,7 +49,7 @@ where
         ctx: &'a Ctx,
         (guild_id, data, force_upgrade_member): (GuildId, &'a BotData, Option<Member>),
         progress_chan: flume::Sender<String>,
-    ) -> anyhow::Result<OptionallyConfiguredResult<PromoteStats>>
+    ) -> Result<OptionallyConfiguredResult<PromoteStats>, Error>
     where
         Ctx: 'a + CacheHttp + AsRef<Http> + AsRef<Cache>,
     {
@@ -76,22 +75,22 @@ where
         let junior_cutoff_age = Utc::now() - Days::new(junior_min_age);
 
         // Do some sanity checks on the config
-        anyhow::ensure!(
+        ensure!(
             new_role != junior_role,
             "New and Junior roles cannot be the same! ({:?})",
             new_role
         );
-        anyhow::ensure!(
+        ensure!(
             new_role != full_role,
             "New and Full roles cannot be the same! ({:?})",
             new_role
         );
-        anyhow::ensure!(
+        ensure!(
             junior_role != full_role,
             "Junior and Full roles cannot be the same! ({:?})",
             junior_role
         );
-        anyhow::ensure!(
+        ensure!(
             guild.member_count as usize == guild.members.len(),
             "Member count and number of members in cache differ"
         );

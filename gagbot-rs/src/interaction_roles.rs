@@ -1,7 +1,7 @@
 use poise::serenity_prelude::Timestamp;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::{ChannelId, GuildId, MessageId, RoleId};
+use crate::{ChannelId, GuildId, MessageId, RoleId, Error};
 
 #[derive(Debug, Clone)]
 pub struct InteractionRole {
@@ -26,7 +26,7 @@ pub fn get(
     db: &Connection,
     guild_id: GuildId,
     name: String,
-) -> anyhow::Result<Option<InteractionRole>> {
+) -> Result<Option<InteractionRole>, Error> {
     let mut stmt = db.prepare_cached(
         "SELECT name, description, channel_id, message_id, exclusive FROM interaction_role 
             WHERE guild_id = ?1 AND name = ?2",
@@ -77,7 +77,7 @@ pub fn update(
     message_id: Option<MessageId>,
     exclusive: bool,
     timestamp: Timestamp,
-) -> anyhow::Result<bool> {
+) -> Result<bool, Error> {
     let mut stmt = db.prepare_cached(
         "INSERT INTO interaction_role (guild_id, name, description, channel_id, message_id, exclusive, last_updated)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -111,7 +111,7 @@ pub fn update_choice(
     emoji: Option<String>,
     role_id: RoleId,
     timestamp: Timestamp,
-) -> anyhow::Result<bool> {
+) -> Result<bool, Error> {
     let mut stmt = db.prepare_cached(
         "INSERT INTO interaction_role_choice (guild_id, set_name, choice, emoji, role_id, last_updated)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)

@@ -45,7 +45,7 @@
 // channel.","gagbot:voice:toggleafk",{channel: optional(id)}
 //
 
-use std::{fmt::Write, num::ParseIntError, time::Duration};
+use std::{fmt::{Write, Display}, num::ParseIntError, time::Duration};
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -101,7 +101,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Error> {
     dotenv()?;
     configure_tracing();
 
@@ -292,7 +292,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 // TODO: make sure result is handled
-async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> anyhow::Result<()> {
+async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> Result<(), Error> {
     // Prime the cache. It will be kept up to date after this by events
     // TODO: This won't fetch more than 1000. If there are that many members
     //       we should probably not rely on the cache anyway which would mean
@@ -397,37 +397,62 @@ async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> anyhow::
     }
 }
 
-async fn on_error(error: FrameworkError<'_, BotData, Error>) {
-    let msg = match &error {
-        FrameworkError::ArgumentParse {
-            error, ..
-        } => Some(error.to_string()),
-        FrameworkError::Command {
-            error, ..
-        } => {
-            // TODO: Probably do something more fancy with user facing errors and the like?
-            Some(error.to_string())
-        }
+async fn on_error(error: FrameworkError<'_, BotData, PoiseError>) {
+    if error.ctx().is_none() {
+        error!("Error with no ctx in poise.on_error: {:?}", error);
+        return;
+    }
 
-        e => {
-            warn!("UNHANDLED error from poise: {:?}", e);
-            None
+    async fn send_err<'a, T: ToString + Display>(ctx: &'a gagbot_rs::Context<'a>, log_behaviour: LogBehaviour, msg: T) {
+        if log_behaviour.log {
+            error!("poise.on_error: {}", msg);
         }
-    };
+        
+        // TODO: this could be removed and replaced with owner or something else
+        const DEV_USER_ID: u64 = 959181037617942568;
+        let user_msg = match log_behaviour.obfuscate && ctx.author().id != DEV_USER_ID {
+            true => OBFUSCATED_ERROR_MSG.into(),
+            false => msg.to_string(),
+        };
 
-    if let (Some(msg), Some(ctx)) = (msg, error.ctx().as_ref()) {
-        if let Err(e) = Embed::error().description(msg).send(ctx).await {
-            error!("Error from ctx.send in error handler: {:?}", e);
+        if let Err(e) = Embed::error().description(user_msg).send(ctx).await {
+            error!("Error from ctx.send in poise.on_error: {:?}", e);
         }
     }
+
+    let (err, ctx) = match error {
+        FrameworkError::ArgumentParse { error, ctx, .. } => (error.into(), ctx),
+        FrameworkError::Command { error, ctx } => (error, ctx),
+        // FrameworkError::Setup { error, framework, data_about_bot, ctx } => todo!(),
+        // FrameworkError::EventHandler { error, ctx, event, framework } => todo!(),
+        // FrameworkError::CommandStructureMismatch { description, ctx } => todo!(),
+        // FrameworkError::CooldownHit { remaining_cooldown, ctx } => todo!(),
+        // FrameworkError::MissingBotPermissions { missing_permissions, ctx } => todo!(),
+        // FrameworkError::MissingUserPermissions { missing_permissions, ctx } => todo!(),
+        // FrameworkError::NotAnOwner { ctx } => todo!(),
+        // FrameworkError::GuildOnly { ctx } => todo!(),
+        // FrameworkError::DmOnly { ctx } => todo!(),
+        // FrameworkError::NsfwOnly { ctx } => todo!(),
+        // FrameworkError::CommandCheckFailed { error, ctx } => todo!(),
+        // FrameworkError::DynamicPrefix { error, ctx, msg } => todo!(),
+        // FrameworkError::UnknownCommand { ctx, msg, prefix, msg_content, framework, invocation_data, trigger } => todo!(),
+        // FrameworkError::UnknownInteraction { ctx, framework, interaction } => todo!(),
+        e => {
+            send_err(&e.ctx().unwrap(), LogBehaviour::default(), format!("Unhandled poise error: {:?}", e)).await;
+            return;
+        },
+    };    
+
+    
+    send_err(&ctx, err.log_behaviour(), err).await;
 }
 
 async fn event_handler<'a>(
     ctx: &serenity::Context,
     event: &'a poise::Event<'a>,
-    framework: FrameworkContext<'a, BotData, Error>,
+    framework: FrameworkContext<'a, BotData, PoiseError>,
     data: &'a BotData,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     use poise::Event::*;
 
     debug!("got event: {}", event.name());
@@ -500,7 +525,7 @@ async fn handle_voice_state_update(
     data: &BotData,
     old: &Option<VoiceState>,
     new: &VoiceState,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     // Filter out bots
     if new.member.as_ref().map(|v| v.user.bot).unwrap_or(false) {
         return Ok(());
@@ -550,9 +575,9 @@ async fn handle_voice_state_update(
 async fn handle_guild_create<'a>(
     ctx: &Context,
     data: &BotData,
-    framework: FrameworkContext<'a, BotData, Error>,
+    framework: FrameworkContext<'a, BotData, PoiseError>,
     guild: &Guild,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id).await?;
     let channel_id = data
         .general_log_channel(guild.id.into())
@@ -577,7 +602,7 @@ async fn handle_guild_create<'a>(
     Ok(())
 }
 
-async fn handle_message_create(data: &BotData, new_message: &Message) -> anyhow::Result<()> {
+async fn handle_message_create(data: &BotData, new_message: &Message) -> Result<(), Error> {
     Ok(if let Some(guild_id) = new_message.guild_id {
         let user_id = new_message.author.id;
 
@@ -605,7 +630,7 @@ async fn handle_guild_member_remove(
     ctx: &Context,
     guild_id: &serenity::GuildId,
     user: &serenity::User,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     Ok(
         if let Some(channel_id) = data
             .log_channel((*guild_id).into(), vec![LogChannel::JoiningAndLeaving])
@@ -624,7 +649,7 @@ async fn handle_guild_member_add(
     data: &BotData,
     ctx: &Context,
     new_member: &serenity::Member,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let guild_id = new_member.guild_id;
     let user = &new_member.user;
     
@@ -648,7 +673,7 @@ async fn handle_message_delete(
     channel_id: &serenity::ChannelId,
     deleted_message_ids: &Vec<serenity::MessageId>,
     bulk_delete: bool,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     // Only care to log stuff inside the guild
     let guild_id = match guild_id {
         Some(guild_id) => guild_id,
@@ -823,7 +848,7 @@ async fn handle_message_update(
     event: &MessageUpdateEvent,
     old_if_available: &Option<Message>,
     new: &Option<Message>,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     Ok(
         if let (Some(guild_id), Some(old), Some(new)) = (event.guild_id, old_if_available, new) {
             let user = &old.author;
@@ -861,7 +886,7 @@ async fn handle_message_update(
     )
 }
 
-fn message_to_string(message: &Message) -> anyhow::Result<Option<String>> {
+fn message_to_string(message: &Message) -> Result<Option<String>, Error> {
     let mut content = message.content.clone();
 
     for e in message.embeds.iter() {
@@ -907,7 +932,7 @@ async fn log_message_history<'a, T: Write>(
     channel_id: ChannelId,
     message_id: MessageId,
     mut w: T,
-) -> anyhow::Result<Vec<MessageLog>> {
+) -> Result<Vec<MessageLog>, Error> {
     let log = data
         .get_message_log(guild_id, channel_id, message_id)
         .await?;
@@ -953,7 +978,7 @@ async fn handle_message_component_interaction<'a>(
     ctx: &serenity::Context,
     data: &'a BotData,
     interaction: &'a Interaction,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let message_component = if let Interaction::MessageComponent(mc) = interaction {
         mc
     } else {
@@ -966,7 +991,7 @@ async fn handle_message_component_interaction<'a>(
         return Ok(());
     }
 
-    fn split_custom_id(custom_id: Option<&str>) -> anyhow::Result<(String, RoleId)> {
+    fn split_custom_id(custom_id: Option<&str>) -> Result<(String, RoleId), Error> {
         let custom_id = custom_id.ok_or(anyhow::anyhow!("Interaction custom_id missing"))?;
         let parts = custom_id
             .split(INTERACTION_BUTTON_CUSTOM_ID_DELIMITER)
@@ -975,9 +1000,7 @@ async fn handle_message_component_interaction<'a>(
         if parts.len() == 3 && parts[0] == INTERACTION_BUTTON_CUSTOM_ID_PREFIX {
             Ok((parts[1].to_string(), RoleId::from(parts[2].parse::<u64>()?)))
         } else {
-            Err(anyhow::anyhow!(
-                "Interaction custom_id didn't match the expected format"
-            ))
+            Err(anyhow::anyhow!("Interaction custom_id didn't match the expected format"))?
         }
     }
 

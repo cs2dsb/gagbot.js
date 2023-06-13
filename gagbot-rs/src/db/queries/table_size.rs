@@ -3,7 +3,9 @@ use std::fmt::Write;
 use rusqlite::Connection;
 use tracing::error;
 
-pub fn get_table_size_in_bytes(db: &Connection) -> anyhow::Result<Vec<(String, u64, u64)>> {
+use crate::Error;
+
+pub fn get_table_size_in_bytes(db: &Connection) -> Result<Vec<(String, u64, u64)>, Error> {
     let mut stmt = db.prepare(
         "SELECT name, SUM(pgsize) FROM dbstat
     WHERE name NOT LIKE 'sqlite_%'

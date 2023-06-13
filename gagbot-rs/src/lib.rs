@@ -1,6 +1,5 @@
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
-use anyhow::Result;
 use db::{
     queries::config::{ConfigKey, LogChannel},
     DbCommand,
@@ -21,6 +20,9 @@ mod ids;
 pub use ids::*;
 
 pub mod db;
+
+mod error;
+pub use error::*;
 
 pub mod interaction_roles;
 pub mod message_log;
@@ -83,19 +85,19 @@ impl BotData {
         }
     }
 
-    pub fn db_available_space(&self) -> anyhow::Result<u64> {
+    pub fn db_available_space(&self) -> Result<u64, Error> {
         if self.db_file_path.is_none() {
-            anyhow::bail!("DB appears to not be disk backed? Can't check the available space");
+            Err(anyhow::anyhow!("DB appears to not be disk backed? Can't check the available space"))?;
         }
 
         Ok(fs2::available_space(self.db_file_path.as_ref().unwrap())?)
     }
 
-    pub async fn general_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>> {
+    pub async fn general_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>, Error> {
         self.log_channel(guild_id, vec![LogChannel::General]).await
     }
 
-    pub async fn error_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>> {
+    pub async fn error_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>, Error> {
         self.log_channel(guild_id, vec![LogChannel::Error, LogChannel::General])
             .await
     }
@@ -104,7 +106,7 @@ impl BotData {
         &self,
         guild_id: GuildId,
         purpose: Vec<LogChannel>,
-    ) -> Result<Option<ChannelId>> {
+    ) -> Result<Option<ChannelId>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetLogChannel {
@@ -121,7 +123,7 @@ impl BotData {
         guild_id: GuildId,
         user_id: UserId,
         channel_id: Option<ChannelId>,
-    ) -> Result<usize> {
+    ) -> Result<usize, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetMessageCount {
@@ -138,7 +140,7 @@ impl BotData {
         &self,
         guild_id: GuildId,
         user: &User,
-    ) -> Result<Option<(ChannelId, Embed)>> {
+    ) -> Result<Option<(ChannelId, Embed)>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetGreet {
@@ -167,7 +169,7 @@ impl BotData {
         guild_id: GuildId,
         user_id: UserId,
         channel_id: ChannelId,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::IncrementMessageCount {
@@ -186,7 +188,7 @@ impl BotData {
         key: ConfigKey,
         timestamp: Timestamp,
         value: String,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::SetConfigString {
@@ -204,7 +206,7 @@ impl BotData {
         &self,
         guild: &Guild,
         member: &Member,
-    ) -> Result<Vec<EffectivePermission>> {
+    ) -> Result<Vec<EffectivePermission>, Error> {
         let sorted_roles = {
             let mut roles = guild
                 .roles
@@ -243,7 +245,7 @@ impl BotData {
         guild: &Guild,
         member: &Member,
         permission: Permission,
-    ) -> Result<EffectivePermission> {
+    ) -> Result<EffectivePermission, Error> {
         let effective_permission = self
             .get_member_permissions(guild, member)
             .await?
@@ -251,7 +253,7 @@ impl BotData {
             // TODO: do we need anything more sophisticated like a tree of permissions?
             .find(|x| x.permission == permission || x.permission == Permission::All);
 
-        effective_permission.ok_or(anyhow::anyhow!("Permission denied"))
+        effective_permission.ok_or(Error::PermissionDenied(permission).into())
     }
 
     pub async fn grant_permission(
@@ -260,7 +262,7 @@ impl BotData {
         role_id: RoleId,
         permission: Permission,
         timestamp: Timestamp,
-    ) -> Result<bool> {
+    ) -> Result<bool, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GrantPermission {
@@ -280,7 +282,7 @@ impl BotData {
         role_id: RoleId,
         permission: Permission,
         timestamp: Timestamp,
-    ) -> Result<bool> {
+    ) -> Result<bool, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::RevokePermission {
@@ -294,7 +296,7 @@ impl BotData {
         Ok(r.await??)
     }
 
-    pub async fn purge_permission(&self, guild_id: GuildId, timestamp: Timestamp) -> Result<bool> {
+    pub async fn purge_permission(&self, guild_id: GuildId, timestamp: Timestamp) -> Result<bool, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::PurgePermissions {
@@ -310,7 +312,7 @@ impl BotData {
         &self,
         guild_id: GuildId,
         name: String,
-    ) -> Result<Option<InteractionRole>> {
+    ) -> Result<Option<InteractionRole>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetInteractionRole {
@@ -331,7 +333,7 @@ impl BotData {
         message_id: Option<MessageId>,
         exclusive: bool,
         timestamp: Timestamp,
-    ) -> Result<bool> {
+    ) -> Result<bool, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::UpdateInteractionRoleSet {
@@ -356,7 +358,7 @@ impl BotData {
         emoji: Option<String>,
         role_id: RoleId,
         timestamp: Timestamp,
-    ) -> Result<bool> {
+    ) -> Result<bool, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::UpdateInteractionRoleChoice {
@@ -381,7 +383,7 @@ impl BotData {
         timestamp: Timestamp,
         type_: LogType,
         message: Option<Message>,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::LogMessage {
@@ -403,7 +405,7 @@ impl BotData {
         guild_id: GuildId,
         channel_id: ChannelId,
         message_id: MessageId,
-    ) -> Result<Vec<MessageLog>> {
+    ) -> Result<Vec<MessageLog>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetLogMessages {
@@ -421,7 +423,7 @@ impl BotData {
         guild_id: GuildId,
         channel_id: ChannelId,
         message_id: MessageId,
-    ) -> Result<Option<UserId>> {
+    ) -> Result<Option<UserId>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetUserFromLogMessages {
@@ -434,7 +436,7 @@ impl BotData {
         Ok(r.await??)
     }
 
-    pub async fn db_table_sizes(&self) -> Result<Vec<(String, u64, u64)>> {
+    pub async fn db_table_sizes(&self) -> Result<Vec<(String, u64, u64)>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetTableBytesAndCount {
@@ -444,7 +446,7 @@ impl BotData {
         Ok(r.await??)
     }
 
-    pub async fn get_config_u64(&self, guild_id: GuildId, key: ConfigKey) -> Result<Option<u64>> {
+    pub async fn get_config_u64(&self, guild_id: GuildId, key: ConfigKey) -> Result<Option<u64>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetConfigU64 {
@@ -460,7 +462,7 @@ impl BotData {
         &self,
         guild_id: GuildId,
         key: ConfigKey,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<String>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetConfigString {
@@ -484,7 +486,7 @@ pub fn expand_greeting_template(user: &User, message: &mut String) {
     .replace("\\n", "\n").to_string();
 }
 
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type PoiseError = Error;//Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, BotData, Error>;
 
 pub fn configure_tracing() {
@@ -499,7 +501,7 @@ pub fn configure_tracing() {
     .expect("Failed to set default tracing subscriber");
 }
 
-pub fn open_database(connection_string: &str, create: bool) -> Result<Connection> {
+pub fn open_database(connection_string: &str, create: bool) -> Result<Connection, Error> {
     let mut open_flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_URI
         | OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -523,7 +525,7 @@ pub fn open_database(connection_string: &str, create: bool) -> Result<Connection
     Ok(con)
 }
 
-pub fn close_database(con: Connection) -> Result<()> {
+pub fn close_database(con: Connection) -> Result<(), Error> {
     con.pragma_update(None, "analysis_limit", "400")?;
     con.pragma_update(None, "optimize", "")?;
     con.pragma_update(None, "foreign_keys", "ON")?;

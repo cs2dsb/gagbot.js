@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../../../../.cargo/registry/src/github.com-1ecc6299db9ec823/poise-0.5.2"
+		},
+		{
+			"path": "../../../../.cargo/registry/src/github.com-1ecc6299db9ec823/poise_macros-0.5.2"
 		}
 	],
 	"settings": {

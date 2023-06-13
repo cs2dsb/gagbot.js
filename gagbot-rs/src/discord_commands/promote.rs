@@ -6,7 +6,7 @@ use tracing::error;
 use crate::{
     commands::promote::{run_promote, OptionallyConfiguredResult},
     permissions::{Permission, PermissionCheck},
-    Context, Embed, EmbedFlavour, Error,
+    Context, Embed, EmbedFlavour, PoiseError,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Member management")]
@@ -15,7 +15,7 @@ pub async fn promote(
     ctx: Context<'_>,
     #[description = "Override checks and upgrade this member to the next level"]
     force_upgrade_member: Option<Member>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::MemberPromote).await?;
 
     let guild_id = ctx

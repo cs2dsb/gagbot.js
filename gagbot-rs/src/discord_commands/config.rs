@@ -6,7 +6,7 @@ use tokio::sync::oneshot;
 use crate::{
     db::{queries::config::ConfigKey, DbCommand},
     permissions::{Permission, PermissionCheck},
-    Context, Embed, Error,
+    Context, Embed, PoiseError,
 };
 
 #[poise::command(prefix_command, slash_command, guild_only, category = "Config")]
@@ -15,7 +15,7 @@ pub async fn get_config(
     ctx: Context<'_>,
 
     #[description = "The config key you want to look up the value for"] key: ConfigKey,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -56,7 +56,7 @@ pub async fn set_config(
 
     #[description = "The config key you want to set the value for"] key: ConfigKey,
     #[description = "The value you want to change it to"] value: String,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -98,7 +98,7 @@ pub async fn set_log(
     ctx: Context<'_>,
 
     #[description = "The channel you want all logs to go to"] channel: ChannelId,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -140,7 +140,7 @@ pub async fn delete_config(
     ctx: Context<'_>,
 
     #[description = "The config key you want to delete the value for"] key: ConfigKey,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -180,7 +180,7 @@ pub async fn config_help(
     ctx: Context<'_>,
 
     #[description = "The config key you want help with"] key: Option<ConfigKey>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let mut keys = Vec::new();

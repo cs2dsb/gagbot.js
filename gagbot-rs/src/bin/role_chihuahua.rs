@@ -1,6 +1,5 @@
 use std::{num::ParseIntError, time::Duration};
 
-use anyhow::Context as _;
 use chrono::{Utc};
 use clap::Parser;
 use dotenv::dotenv;
@@ -51,7 +50,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Error> {
     dotenv()?;
     configure_tracing();
 
@@ -220,7 +219,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn on_error(error: FrameworkError<'_, BotData, Error>) {
+async fn on_error(error: FrameworkError<'_, BotData, PoiseError>) {
     let msg = match &error {
         FrameworkError::ArgumentParse {
             error, ..
@@ -248,9 +247,9 @@ async fn on_error(error: FrameworkError<'_, BotData, Error>) {
 async fn event_handler<'a>(
     ctx: &serenity::Context,
     event: &'a poise::Event<'a>,
-    framework: FrameworkContext<'a, BotData, Error>,
+    framework: FrameworkContext<'a, BotData, PoiseError>,
     data: &'a BotData,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     use poise::Event::*;
 
     debug!("got event: {}", event.name());
@@ -271,9 +270,9 @@ async fn event_handler<'a>(
 async fn handle_guild_create<'a>(
     ctx: &Context,
     data: &BotData,
-    framework: FrameworkContext<'a, BotData, Error>,
+    framework: FrameworkContext<'a, BotData, PoiseError>,
     guild: &Guild,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id)        
         .await
         .context("register_in_guild")?;
@@ -305,7 +304,7 @@ async fn handle_guild_member_add(
     data: &BotData,
     ctx: &Context,
     new_member: &serenity::Member,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let guild_id = new_member.guild_id;    
     run_greet(&data, &ctx, guild_id.into(), new_member.clone(), GreetBehaviour::ApplyRole).await?;
     Ok(())

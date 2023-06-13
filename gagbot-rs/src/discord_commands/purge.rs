@@ -1,4 +1,3 @@
-use anyhow::Context as _;
 use chrono::Utc;
 use futures::StreamExt;
 use poise::{
@@ -9,10 +8,11 @@ use poise::{
 };
 
 use crate::{
+    ErrorContext,
     db::queries::config::LogChannel,
     message_log::LogType,
     permissions::{Permission, PermissionCheck},
-    with_progress_embed, BotData, Context, Error, GuildId, UserId, commands::promote::OptionallyConfiguredResult,
+    with_progress_embed, BotData, Context, PoiseError, GuildId, UserId, commands::promote::OptionallyConfiguredResult,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
@@ -24,7 +24,7 @@ pub async fn purge<'a>(
     filter_user: Option<User>,
     #[description = "Limit the number deleted (working backwards from the newest message). Defaults to 50"]
     limit: Option<u64>,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::MessagePurge).await?;
     let channel_id = ctx.channel_id();
     let guild_id = ctx
@@ -47,7 +47,7 @@ pub async fn purge<'a>(
             u64,
         ),
         progress_chan: flume::Sender<String>,
-    ) -> Result<OptionallyConfiguredResult<()>, Error>
+    ) -> Result<OptionallyConfiguredResult<()>, PoiseError>
     where
         Ctx: 'a + CacheHttp + AsRef<Http> + AsRef<Cache>,
     {
@@ -68,7 +68,7 @@ pub async fn purge<'a>(
             bot_id: &UserId,
             batch: &mut Vec<MessageId>,
             progress_chan: &flume::Sender<String>,
-        ) -> Result<(), Error> {
+        ) -> Result<(), PoiseError> {
             if batch.len() > 0 {
                 progress_chan
                     .send_async(format!("Deleting {} messages", batch.len()))

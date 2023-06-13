@@ -32,6 +32,9 @@ tracing-subscriber = { version = "0.3.16", features = [ "env-filter" ] }
 # Error handling for the bins
 anyhow = "1.0.62"
 
+# Error handling for the lib
+thiserror = "1.0.40"
+
 # Date handling
 chrono = { version = "0.4.22", features = [ "serde" ] }
 

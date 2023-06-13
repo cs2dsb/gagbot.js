@@ -6,7 +6,7 @@ use tracing::error;
 use crate::{
     commands::{add_member::run_add_member, promote::{OptionallyConfiguredResult}},
     permissions::{Permission, PermissionCheck},
-    Context, Embed, EmbedFlavour, Error,
+    Context, Embed, EmbedFlavour, PoiseError,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Member management")]
@@ -15,7 +15,7 @@ pub async fn add_member(
     ctx: Context<'_>,
     #[description = "The member to add"]
     member: Member,
-) -> Result<(), Error> {
+) -> Result<(), PoiseError> {
     ctx.require_permission(Permission::MemberAdd).await?;
 
     let guild_id = ctx
