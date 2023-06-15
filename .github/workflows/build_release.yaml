@@ -1,9 +1,8 @@
 name: Cross platform build
 
-
 env:
-  # {bin name:final name}
-  EXECUTABLE_NAMES: {main:gagbot,role_chihuahua:role_chihuahua}
+  # bin name:final name,..
+  EXECUTABLE_NAMES: "main:gagbot,role_chihuahua:role_chihuahua"
 
 on:
   push:
@@ -31,21 +30,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        # Currently has linking errors
-        # - build: linux-musl
-        #   os: ubuntu-22.04
-        #   rust: stable
-        #   target: x86_64-unknown-linux-musl
-
         - build: linux-gnu
           os: ubuntu-22.04
           rust: stable
           target: x86_64-unknown-linux-gnu
-
-        - build: windows-gnu
-          os: ubuntu-22.04
-          rust: stable
-          target: x86_64-pc-windows-gnu
 
     steps:
     - name: Get tag
@@ -62,12 +50,7 @@ jobs:
         echo "TAG=$([[ "${{ steps.tag.outputs.tag }}" = "" ]] && echo "main_$DATE" || echo "main_${{ steps.tag.outputs.tag }}")" >> $GITHUB_ENV
 
     - name: Checkout repository
-      uses: actions/checkout@v3      
-
-    - name: Install packages (Ubuntu)
-      if: matrix.os == 'ubuntu-22.04'
-      run: |
-        ci/ubuntu-install-packages
+      uses: actions/checkout@v3  
     
     - name: Install rust toolchain
       uses: actions-rs/toolchain@v1
@@ -91,7 +74,7 @@ jobs:
         echo "target dir is: ${{ env.TARGET_DIR }}"
 
     - name: Build release binary
-      run: ${{ env.CARGO }} build --verbose --release --features default, ${{ env.TARGET_FLAGS }}
+      run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
 
     - name: Strip and archive release (Non-Windows)
       if: ${{ ! contains(matrix.target, 'windows') }}
