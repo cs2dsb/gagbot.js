@@ -34,6 +34,7 @@ pub struct Permissions {
 pub struct Greet {
     pub message: Option<String>,
     pub role: Option<String>,
+    pub default_role: Option<String>,
     pub channel: Option<String>,
     pub welcomechannel: Option<String>,
     pub welcomemessage: Option<String>,
@@ -208,6 +209,16 @@ async fn main() -> Result<(), Error> {
         },
     }?;
 
+    let docs: Result<Vec<Document>, _> = mongo_db
+        .collection(Guild::collection())
+        .find(None, None)
+        .await?
+        .try_collect()        
+        .await
+        .context("Fetching Guild::collection()");
+
+    debug!("Docs: {:#?}", docs);
+
     let log_channels = {
         let rows: Vec<LogChannels> = mongo_db
             .collection(LogChannels::collection())
@@ -274,19 +285,28 @@ async fn main() -> Result<(), Error> {
             )?;
 
             if let Some(message) = greet.message.as_ref() {
-                config_stmt.execute(params![guild_id, ConfigKey::GreetMessage, message])?;
+                config_stmt.execute(params![guild_id, ConfigKey::GreetMessage, message])
+                    .context(format!("Inserting {}", ConfigKey::GreetMessage))?;
             }
             if let Some(channel) = greet.channel.as_ref() {
-                config_stmt.execute(params![guild_id, ConfigKey::GreetChannel, channel])?;
+                config_stmt.execute(params![guild_id, ConfigKey::GreetChannel, channel])
+                .context(format!("Inserting {}", ConfigKey::GreetChannel))?;
             }
             if let Some(role) = greet.role.as_ref() {
-                config_stmt.execute(params![guild_id, ConfigKey::GreetRole, role])?;
+                config_stmt.execute(params![guild_id, ConfigKey::GreetRole, role])
+                .context(format!("Inserting {}", ConfigKey::GreetRole))?;
+            }
+            if let Some(role) = greet.default_role.as_ref() {
+                config_stmt.execute(params![guild_id, ConfigKey::GreetDefaultRole, role])
+                .context(format!("Inserting {}", ConfigKey::GreetDefaultRole))?;
             }
             if let Some(welcomemessage) = greet.welcomemessage.as_ref() {
-                config_stmt.execute(params![guild_id, ConfigKey::GreetWelcomeMessage, welcomemessage])?;
+                config_stmt.execute(params![guild_id, ConfigKey::GreetWelcomeMessage, welcomemessage])
+                .context(format!("Inserting {}", ConfigKey::GreetWelcomeMessage))?;
             }
             if let Some(welcomechannel) = greet.welcomechannel.as_ref() {
-                config_stmt.execute(params![guild_id, ConfigKey::GreetWelcomeChannel, welcomechannel])?;
+                config_stmt.execute(params![guild_id, ConfigKey::GreetWelcomeChannel, welcomechannel])
+                .context(format!("Inserting {}", ConfigKey::GreetWelcomeChannel))?;
             }
         }
 
@@ -352,7 +372,8 @@ async fn main() -> Result<(), Error> {
             VALUES (?1, ?2, ?3);",
             )?;
             for (key, value) in config.into_iter().filter(|(_, v)| v.is_some()) {
-                config_stmt.execute(params![guild_id, key, &value.unwrap()])?;
+                config_stmt.execute(params![guild_id, key, &value.unwrap()])
+                    .context(format!("Inserting {}", key))?;
             }
         }
 
@@ -375,7 +396,8 @@ async fn main() -> Result<(), Error> {
                 }
                 .iter()
                 {
-                    config_stmt.execute(params![guild_id, *key, &log_channel.channel])?;
+                    config_stmt.execute(params![guild_id, *key, &log_channel.channel])
+                        .context(format!("Inserting {}", key))?;
                 }
             }
         }

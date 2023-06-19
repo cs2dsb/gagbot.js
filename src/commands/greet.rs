@@ -71,10 +71,17 @@ where
     // Send the greeting
     debug!("Greeting {}", member);
     expand_greeting_template(&member.user, &mut greet_message);
-    Embed::default()
+    
+    let mut embed = Embed::default()
         .content(format!("{member}"))
         .description(greet_message)
-        .random_color()
+        .random_color();
+
+    if let Some(url) = member.user.avatar_url() {
+        embed = embed.thumbnail_url(url);
+    }
+
+    embed
         .send_in_channel(greet_channel.id.into(), ctx)
         .await?;
 
