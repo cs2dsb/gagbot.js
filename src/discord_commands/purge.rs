@@ -148,7 +148,10 @@ pub async fn purge<'a>(
     }
 
     const PURGE_TITLE: &str = "Purge";
-    let message = ctx.say("Purging...").await?;
+    let message = ctx.send(|b| b
+        .ephemeral(true)
+        .content("Purging...")
+    ).await?;
 
     match with_progress_embed(
         ctx.data(),
@@ -170,7 +173,10 @@ pub async fn purge<'a>(
     )
     .await
     {
-        Ok(_) => message.edit(ctx, |b| b.content("Done")).await,
+        Ok(_) => {
+            message.edit(ctx, |b| b.content("Done")).await?;
+            message.delete(ctx).await
+        },
         Err(e) => {
             message
                 .edit(ctx, |b| b.content(format!("Error purging: {:?}", e)))
