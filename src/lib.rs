@@ -536,3 +536,11 @@ pub fn close_database(con: Connection) -> Result<(), Error> {
 
     Ok(())
 }
+
+pub fn load_dotenv() -> Result<Option<PathBuf>, dotenv::Error> {
+    match dotenv::dotenv() {
+        // Swallow NotFound error since the .env is optional
+        Err(dotenv::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        r => r.map(|p| Some(p)),
+    }
+}

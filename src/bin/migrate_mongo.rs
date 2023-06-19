@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use clap::Parser;
-use dotenv::dotenv;
 use futures::TryStreamExt;
 use gagbot_rs::{db::queries::config::*, *};
 use mongodb::{
@@ -147,7 +146,7 @@ impl RoleSets {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    dotenv()?;
+    load_dotenv()?;
 
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()

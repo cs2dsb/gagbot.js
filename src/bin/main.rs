@@ -6,7 +6,6 @@ use std::{fmt::{Write, Display}, num::ParseIntError, time::Duration};
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use dotenv::dotenv;
 use futures::future::join;
 use gagbot_rs::{
     commands::{promote::{run_promote, OptionallyConfiguredResult}, log::log, greet::{run_greet, GreetBehaviour}},
@@ -59,7 +58,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    dotenv()?;
+    load_dotenv()?;
     configure_tracing();
 
     let args = Cli::parse();
