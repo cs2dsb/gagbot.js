@@ -813,7 +813,7 @@ async fn handle_message_update(
                     .log_channel(guild_id.into(), vec![LogChannel::EditsAndDeletes])
                     .await?
                 {
-                    let channel_id_n = channel_id.0;
+                    let channel_id_n = event.channel_id.0;
                     let message_id = new.id.0;
                     let user_id = user.id.0;
                     let before = &old.content;
@@ -821,10 +821,10 @@ async fn handle_message_update(
                     let before_timestamp = old.timestamp.timestamp();
                     let after_timestamp = new.timestamp.timestamp();
                     Embed::default()
-                    .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
-                    .flavour(EmbedFlavour::LogEdit)
-                    .send_in_channel(channel_id, &ctx.http)
-                    .await?;
+                        .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
+                        .flavour(EmbedFlavour::LogEdit)
+                        .send_in_channel(channel_id, &ctx.http)
+                        .await?;
                 }
             }
 
