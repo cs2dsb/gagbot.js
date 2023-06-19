@@ -289,7 +289,7 @@ async fn handle_guild_create<'a>(
         Embed::default()
             .random_color()
             .title("I'm here")
-            .description(format!("<t:{}>", now))
+            .description(format!("<t:{}>\nVersion: {}", now, env!("CARGO_PKG_VERSION")))
             .send_in_channel(chan, &ctx.http)
             .await
             .context("send_in_channel (I'm here)")?;
