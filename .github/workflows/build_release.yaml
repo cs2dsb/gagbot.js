@@ -47,7 +47,7 @@ jobs:
         echo "SUFFIX=$([[ "${{ steps.tag.outputs.tag }}" = "" ]] && echo $GITHUB_SHA || echo ${{ steps.tag.outputs.tag }})" >> $GITHUB_ENV
         DATE=$(date +'%Y-%m-%d')
         echo "DATE=$DATE" >> $GITHUB_ENV
-        echo "TAG=$([[ "${{ steps.tag.outputs.tag }}" = "" ]] && echo "main_$DATE" || echo "main_${{ steps.tag.outputs.tag }}")" >> $GITHUB_ENV
+        echo "TAG=$([[ "${{ steps.tag.outputs.tag }}" = "" ]] && echo "main_$DATE" || echo "${{ steps.tag.outputs.tag }}")" >> $GITHUB_ENV
 
     - name: Checkout repository
       uses: actions/checkout@v3  
@@ -127,3 +127,4 @@ jobs:
         overwrite: true
         file_glob: true
         promote: true
+        prerelease: false
