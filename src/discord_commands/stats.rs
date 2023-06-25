@@ -14,6 +14,7 @@ pub async fn message_count(
         ChannelId,
     >,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");

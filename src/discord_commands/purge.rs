@@ -25,6 +25,7 @@ pub async fn purge<'a>(
     #[description = "Limit the number deleted (working backwards from the newest message). Defaults to 50"]
     limit: Option<u64>,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::MessagePurge).await?;
     let channel_id = ctx.channel_id();
     let guild_id = ctx

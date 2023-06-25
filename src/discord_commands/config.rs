@@ -16,6 +16,7 @@ pub async fn get_config(
 
     #[description = "The config key you want to look up the value for"] key: ConfigKey,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -57,6 +58,7 @@ pub async fn set_config(
     #[description = "The config key you want to set the value for"] key: ConfigKey,
     #[description = "The value you want to change it to"] value: String,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -99,6 +101,7 @@ pub async fn set_log(
 
     #[description = "The channel you want all logs to go to"] channel: ChannelId,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -141,6 +144,7 @@ pub async fn delete_config(
 
     #[description = "The config key you want to delete the value for"] key: ConfigKey,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let guild_id = ctx
@@ -181,6 +185,7 @@ pub async fn config_help(
 
     #[description = "The config key you want help with"] key: Option<ConfigKey>,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let mut keys = Vec::new();

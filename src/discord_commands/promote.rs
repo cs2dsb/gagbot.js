@@ -16,6 +16,7 @@ pub async fn promote(
     #[description = "Override checks and upgrade this member to the next level"]
     force_upgrade_member: Option<Member>,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::MemberPromote).await?;
 
     let guild_id = ctx

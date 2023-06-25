@@ -20,6 +20,7 @@ pub async fn help(
 #[poise::command(prefix_command, slash_command, category = "Utils")]
 /// Get the sizes of each database table
 pub async fn get_table_sizes(ctx: Context<'_>) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let mut tables = ctx.data().db_table_sizes().await?;
@@ -78,6 +79,7 @@ pub async fn get_table_sizes(ctx: Context<'_>) -> Result<(), PoiseError> {
 #[poise::command(prefix_command, slash_command, category = "Utils")]
 /// Get the free space on the disk the database file is located on
 pub async fn get_disk_space(ctx: Context<'_>) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     ctx.require_permission(Permission::ConfigManage).await?;
 
     let mut embed = Embed::success().title("Disk space");
@@ -102,6 +104,7 @@ pub async fn get_disk_space(ctx: Context<'_>) -> Result<(), PoiseError> {
 #[poise::command(prefix_command, slash_command, category = "Utils")]
 /// Check all configurable features
 pub async fn check_config(ctx: Context<'_>) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command")

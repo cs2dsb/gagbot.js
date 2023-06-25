@@ -71,6 +71,7 @@ pub async fn test_greet_message(
     #[description = "Member to greet. Defaults to your user if not provided"] 
     member: Option<Member>,
 ) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
     let guild_id = ctx
         .guild_id()
         .expect("missing guild in 'guild_only' command");

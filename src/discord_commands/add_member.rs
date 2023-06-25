@@ -16,6 +16,7 @@ pub async fn add_member(
     #[description = "The member to add"]
     member: Member,
 ) -> Result<(), PoiseError> {
+    ctx.defer().await?;
     ctx.require_permission(Permission::MemberAdd).await?;
 
     let guild_id = ctx
