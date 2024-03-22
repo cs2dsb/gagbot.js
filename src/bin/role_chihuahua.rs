@@ -1,10 +1,10 @@
 use std::{num::ParseIntError, time::Duration};
 
-use chrono::{Utc};
+use chrono::Utc;
 use clap::Parser;
 use futures::future::join;
 use gagbot_rs::{
-    commands::{greet::{run_greet, GreetBehaviour}},
+    commands::greet::{run_greet, GreetBehaviour},
     db::{
         queries::{
             config::{self}, self,
@@ -74,6 +74,11 @@ async fn main() -> Result<(), Error> {
                     Ok(cmd) => {
                         trace!("DB TASK: got command: {:?}", cmd);
                         match cmd {
+                            // TODO: Most of these should probably only be implemented on the main bot and/or shared
+                            DbCommand::Optimize { respond_to } => {
+                                respond_to.send(optimize_database(&sqlite_con))
+                                    .map_err(|_| anyhow::anyhow!("Optimize respond_to oneshot closed"))?;
+                            },
                             DbCommand::GetConfigString { guild_id, key, respond_to } => {
                                 respond_to.send(config::get(&sqlite_con, guild_id, key))
                                     .map_err(|_| anyhow::anyhow!("GetConfigString respond_to oneshot closed"))?;

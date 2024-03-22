@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use poise::serenity_prelude::{Message, Timestamp};
 use tokio::sync::oneshot::Sender;
 
@@ -9,8 +11,11 @@ use crate::{
     ChannelId, GuildId, MessageId, RoleId, UserId, Error
 };
 
-#[derive(Debug)]
+#[derive(Debug, strum::Display)]
 pub enum DbCommand {
+    Optimize {
+        respond_to: Sender<Result<Duration, Error>>,
+    },
     GetGreet {
         guild_id: GuildId,
         respond_to: Sender<Result<Option<(ChannelId, String)>, Error>>,

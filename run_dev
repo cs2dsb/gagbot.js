@@ -18,4 +18,4 @@ readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
 cargo watch \
     -i '*.sqlite*' \
     -i '*.log*' \
-    -x "run --bin $bin -- $*"
+    -x "run --release --bin $bin -- $*"

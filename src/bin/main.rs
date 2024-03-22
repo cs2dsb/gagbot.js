@@ -28,7 +28,9 @@ use poise::{
     },
     FrameworkContext, FrameworkError,
 };
-use tokio::time;
+use tokio::{
+    sync::oneshot::Sender, time
+};
 use tracing::*;
 
 fn frequency_seconds_valid_range(s: &str) -> Result<u64, String> {
@@ -56,6 +58,7 @@ struct Cli {
     background_task_frequency_seconds: u64,
 }
 
+// This simulates a single core vm: #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     load_dotenv()?;
@@ -72,103 +75,87 @@ async fn main() -> Result<(), Error> {
     let db_file_path = sqlite_con.path().map(|p| p.to_owned());
     let (sender, receiver) = flume::bounded::<DbCommand>(args.database_command_channel_bound);
 
-    let db_task_handle = tokio::spawn(async move {
+    fn respond<T, E>(respond_to: Sender<Result<T, E>>, response: Result<T, E>, cmd_name: &str) -> Result<(), Error> {
+        respond_to.send(response)
+            .map_err(|_| anyhow::anyhow!("{cmd_name} respond_to oneshot closed"))?;
+        Ok(())
+    }
+
+    let db_task_handle = tokio::task::spawn_blocking(move || {
         debug!("DB TASK: started");
         loop {
-            tokio::select! {
-                r = receiver.recv_async() => match r {
-                    // The only error it returns is Disconnected (which we use to shut down)
-                    Err(_) => break,
-                    Ok(cmd) => {
-                        trace!("DB TASK: got command: {:?}", cmd);
-                        match cmd {
-                            DbCommand::GetConfigString { guild_id, key, respond_to } => {
-                                respond_to.send(config::get(&sqlite_con, guild_id, key))
-                                    .map_err(|_| anyhow::anyhow!("GetConfigString respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetConfigI64 { guild_id, key, respond_to } => {
-                                respond_to.send(config::get(&sqlite_con, guild_id, key))
-                                    .map_err(|_| anyhow::anyhow!("GetConfigI64 respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetConfigU64 { guild_id, key, respond_to } => {
-                                respond_to.send(config::get(&sqlite_con, guild_id, key))
-                                    .map_err(|_| anyhow::anyhow!("GetConfigU64 respond_to oneshot closed"))?;
-                            },
-                            DbCommand::SetConfigString { guild_id, key, value, timestamp, respond_to } => {
-                                respond_to.send(config::update(&sqlite_con, guild_id, key, &value, timestamp))
-                                    .map_err(|_| anyhow::anyhow!("SetConfigString respond_to oneshot closed"))?;
-                            },
-                            DbCommand::DeleteConfig { guild_id, key, timestamp, respond_to } => {
-                                respond_to.send(config::delete(&sqlite_con, guild_id, key, timestamp))
-                                    .map_err(|_| anyhow::anyhow!("DeleteConfig respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetLogChannel { guild_id, purpose, respond_to } => {
-                                respond_to.send(config::get_log_channel(&sqlite_con, guild_id, &purpose))
-                                    .map_err(|_| anyhow::anyhow!("GetLogChannel respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetMessageCount { guild_id, user_id, channel_id, respond_to } => {
-                                respond_to.send(message_count::get(&sqlite_con, guild_id, user_id, channel_id))
-                                    .map_err(|_| anyhow::anyhow!("GetMessageCount respond_to oneshot closed"))?;
-                            },
-                            DbCommand::IncrementMessageCount { guild_id, user_id, channel_id, respond_to } => {
-                                respond_to.send(message_count::increment(&sqlite_con, guild_id, user_id, channel_id))
-                                    .map_err(|_| anyhow::anyhow!("IncrementMessageCount respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetGreet { guild_id, respond_to } => {
-                                respond_to.send(config::get_greet(&sqlite_con, guild_id))
-                                    .map_err(|_| anyhow::anyhow!("GetGreet respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetMemberPermissions { guild_id, sorted_roles, respond_to } => {
-                                respond_to.send(permissions::get(&sqlite_con, guild_id, sorted_roles))
-                                    .map_err(|_| anyhow::anyhow!("GetUserPermissions respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GrantPermission { guild_id, role_id, permission, respond_to, timestamp } => {
-                                respond_to.send(permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp))
-                                    .map_err(|_| anyhow::anyhow!("GrantPermission respond_to oneshot closed"))?;
-                            },
-                            DbCommand::RevokePermission { guild_id, role_id, permission, respond_to, timestamp } => {
-                                respond_to.send(permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp))
-                                    .map_err(|_| anyhow::anyhow!("RevokePermission respond_to oneshot closed"))?;
-                            },
-                            DbCommand::PurgePermissions { guild_id, respond_to, timestamp } => {
-                                respond_to.send(permissions::purge(&mut sqlite_con, guild_id, timestamp))
-                                    .map_err(|_| anyhow::anyhow!("PurgePermissions respond_to oneshot closed"))?;
-                            },
-                            DbCommand::UpdateInteractionRoleSet { guild_id, name, description, channel_id, message_id, exclusive, timestamp, respond_to } => {
-                                respond_to.send(interaction_roles::update(&sqlite_con, guild_id, name, description, channel_id, message_id, exclusive, timestamp))
-                                    .map_err(|_| anyhow::anyhow!("UpdateInteractionRoleSet respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetInteractionRole { guild_id, name, respond_to } => {
-                                respond_to.send(interaction_roles::get(&sqlite_con, guild_id, name ))
-                                    .map_err(|_| anyhow::anyhow!("GetInteractionRoleSet respond_to oneshot closed"))?;
-                            },
-                            DbCommand::UpdateInteractionRoleChoice { guild_id, set_name, choice, emoji, role_id, timestamp, respond_to } => {
-                                respond_to.send(interaction_roles::update_choice(&sqlite_con, guild_id, set_name, choice, emoji, role_id, timestamp ))
-                                    .map_err(|_| anyhow::anyhow!("UpdateInteractionRoleChoice respond_to oneshot closed"))?;
-                            },
-                            DbCommand::LogMessage { guild_id, user_id, channel_id, message_id, timestamp, type_, message, respond_to } => {
-                                respond_to.send(message_log::log(&sqlite_con, guild_id, user_id, channel_id, message_id, timestamp, type_, message))
-                                    .map_err(|_| anyhow::anyhow!("LogMessage respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetLogMessages { guild_id, channel_id, message_id, respond_to } => {
-                                respond_to.send(message_log::get(&sqlite_con, guild_id, channel_id, message_id))
-                                    .map_err(|_| anyhow::anyhow!("GetLogMessages respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetUserFromLogMessages{ guild_id, channel_id, message_id, respond_to } => {
-                                respond_to.send(message_log::get_user(&sqlite_con, guild_id, channel_id, message_id))
-                                    .map_err(|_| anyhow::anyhow!("GetUserFromLogMessages respond_to oneshot closed"))?;
-                            },
-                            DbCommand::GetTableBytesAndCount { respond_to } => {
-                                respond_to.send(queries::get_table_size_in_bytes(&sqlite_con))
-                                    .map_err(|_| anyhow::anyhow!("GetTableBytes respond_to oneshot closed"))?;
-                            }
+            match receiver.recv() {
+                // The only error it returns is Disconnected (which we use to shut down)
+                Err(_) => break,
+                Ok(cmd) => {
+                    let cmd_name = cmd.to_string();
+                    let _span = span!(Level::INFO, "DB TASK", cmd = cmd_name).entered();
+                    match cmd {
+                        DbCommand::Optimize { respond_to } => {
+                            respond(respond_to, optimize_database(&sqlite_con), &cmd_name)?;
+                        },
+                        DbCommand::GetConfigString { guild_id, key, respond_to } => {
+                            respond(respond_to, config::get(&sqlite_con, guild_id, key), &cmd_name)?;
+                        },
+                        DbCommand::GetConfigI64 { guild_id, key, respond_to } => {
+                            respond(respond_to, config::get(&sqlite_con, guild_id, key), &cmd_name)?;
+                        },
+                        DbCommand::GetConfigU64 { guild_id, key, respond_to } => {
+                            respond(respond_to, config::get(&sqlite_con, guild_id, key), &cmd_name)?;
+                        },
+                        DbCommand::SetConfigString { guild_id, key, value, timestamp, respond_to } => {
+                            respond(respond_to, config::update(&sqlite_con, guild_id, key, &value, timestamp), &cmd_name)?;
+                        },
+                        DbCommand::DeleteConfig { guild_id, key, timestamp, respond_to } => {
+                            respond(respond_to, config::delete(&sqlite_con, guild_id, key, timestamp), &cmd_name)?;
+                        },
+                        DbCommand::GetLogChannel { guild_id, purpose, respond_to } => {
+                            respond(respond_to, config::get_log_channel(&sqlite_con, guild_id, &purpose), &cmd_name)?;
+                        },
+                        DbCommand::GetMessageCount { guild_id, user_id, channel_id, respond_to } => {
+                            respond(respond_to, message_count::get(&sqlite_con, guild_id, user_id, channel_id), &cmd_name)?;
+                        },
+                        DbCommand::IncrementMessageCount { guild_id, user_id, channel_id, respond_to } => {
+                            respond(respond_to, message_count::increment(&sqlite_con, guild_id, user_id, channel_id), &cmd_name)?;
+                        },
+                        DbCommand::GetGreet { guild_id, respond_to } => {
+                            respond(respond_to, config::get_greet(&sqlite_con, guild_id), &cmd_name)?;
+                        },
+                        DbCommand::GetMemberPermissions { guild_id, sorted_roles, respond_to } => {
+                            respond(respond_to, permissions::get(&sqlite_con, guild_id, sorted_roles), &cmd_name)?;
+                        },
+                        DbCommand::GrantPermission { guild_id, role_id, permission, respond_to, timestamp } => {
+                            respond(respond_to, permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp), &cmd_name)?;
+                        },
+                        DbCommand::RevokePermission { guild_id, role_id, permission, respond_to, timestamp } => {
+                            respond(respond_to, permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp), &cmd_name)?;
+                        },
+                        DbCommand::PurgePermissions { guild_id, respond_to, timestamp } => {
+                            respond(respond_to, permissions::purge(&mut sqlite_con, guild_id, timestamp), &cmd_name)?;
+                        },
+                        DbCommand::UpdateInteractionRoleSet { guild_id, name, description, channel_id, message_id, exclusive, timestamp, respond_to } => {
+                            respond(respond_to, interaction_roles::update(&sqlite_con, guild_id, name, description, channel_id, message_id, exclusive, timestamp), &cmd_name)?;
+                        },
+                        DbCommand::GetInteractionRole { guild_id, name, respond_to } => {
+                            respond(respond_to, interaction_roles::get(&sqlite_con, guild_id, name ), &cmd_name)?;
+                        },
+                        DbCommand::UpdateInteractionRoleChoice { guild_id, set_name, choice, emoji, role_id, timestamp, respond_to } => {
+                            respond(respond_to, interaction_roles::update_choice(&sqlite_con, guild_id, set_name, choice, emoji, role_id, timestamp ), &cmd_name)?;
+                        },
+                        DbCommand::LogMessage { guild_id, user_id, channel_id, message_id, timestamp, type_, message, respond_to } => {
+                            respond(respond_to, message_log::log(&sqlite_con, guild_id, user_id, channel_id, message_id, timestamp, type_, message), &cmd_name)?;
+                        },
+                        DbCommand::GetLogMessages { guild_id, channel_id, message_id, respond_to } => {
+                            respond(respond_to, message_log::get(&sqlite_con, guild_id, channel_id, message_id), &cmd_name)?;
+                        },
+                        DbCommand::GetUserFromLogMessages{ guild_id, channel_id, message_id, respond_to } => {
+                            respond(respond_to, message_log::get_user(&sqlite_con, guild_id, channel_id, message_id), &cmd_name)?;
+                        },
+                        DbCommand::GetTableBytesAndCount { respond_to } => {
+                            respond(respond_to, queries::get_table_size_in_bytes(&sqlite_con), &cmd_name)?;
                         }
-                    },
+                    }
                 },
-                // Can be used to test poise graceful shutdown
-                // _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
-                //     Err(anyhow::anyhow!("DB fake error"))?;
-                // }
             }
         }
         debug!("DB TASK: exiting");
@@ -239,6 +226,7 @@ async fn main() -> Result<(), Error> {
         },
     )
     .await;
+    // TODO: Handle SIGTERM to cleanup DB before exit
 
     // First ? is for join result, 2nd is for the actual task result
     db_r??;
@@ -257,97 +245,118 @@ async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> Result<(
 
     let formatter = make_format(BINARY);
     let mut tick_interval = time::interval(data.background_task_frequency);
+    
     let tick_duration = chrono::Duration::from_std(data.background_task_frequency)?;
     loop {
         tokio::select! {
-            _ = tick_interval.tick() => {
-                let next_run: DateTime<Utc> = Utc::now() + tick_duration;
+            _ = tick_interval.tick() => {                
+                let span = span!(Level::INFO, "Running background tasks");
+                
+                async {
+                    let next_run: DateTime<Utc> = Utc::now() + tick_duration;
 
-                debug!("Running background tasks");
+                    let log_channel_id = match data.general_log_channel_or_default(&guild).await {
+                        Err(e) => {
+                            error!("Error getting general log channel in background_tasks for guild: {} ({}): {:?}", guild.name, guild.id, e);
+                            return Ok::<_, Error>(());
+                        },
+                        Ok(v) => v,
+                    };
 
-                let log_channel_id = match data
-                    .general_log_channel(guild.id.into())
-                    .await
-                {
-                    Err(e) => {
-                        error!("Error getting general log channel in background_tasks for guild: {} ({}): {:?}", guild.name, guild.id, e);
-                        continue
-                    },
-                    Ok(None) => continue,
-                    Ok(Some(v)) => v,
-                };
+                    let mut embed = Embed::default()
+                        .title("Ran background tasks");
 
-                let mut embed = Embed::default()
-                    .title("Ran background tasks");
+                    let mut msg = String::new();
+                    // 0 = ok, 1 = warn, 2 = error
+                    let mut err_lvl = 0;
 
-                let mut msg = String::new();
-                // 0 = ok, 1 = warn, 2 = error
-                let mut err_lvl = 0;
-
-                match data.db_available_space() {
-                    Ok(bytes) if bytes > DISK_SPACE_WARNING_LEVEL => {
-                        write!(&mut msg, ":white_check_mark: Disk space ok: {}", formatter(bytes))?;
-                    },
-                    Ok(bytes) => {
-                        err_lvl = err_lvl.max(1);
-                        write!(&mut msg, ":x: Disk space low: {}", formatter(bytes))?;
-                    },
-                    Err(e) => {
-                        err_lvl = err_lvl.max(2);
-                        let err = format!(":x: Disk space error: {:?}", e);
-                        error!("Error checking disk space: {}", err);
-                        msg.push_str(&err);
+                    // TODO: this will be run once for each connected guild, this is not exactly what we want with one shared DB
+                    match data.db_optimize().await {
+                        Ok(duration) => {
+                            write!(&mut msg, ":white_check_mark: DB optimize ran OK in {} μs", duration.as_micros())?;
+                        },
+                        Err(e) => {
+                            err_lvl = err_lvl.max(1);
+                            let err = format!(":x: DB optimize error: {:?}", e);
+                            error!("Error optimizing DB: {}", err);
+                            msg.push_str(&err);
+                        }
                     }
-                }
-                msg.push('\n');
+                    msg.push('\n');
 
-                match data.db_table_sizes().await {
-                    Ok(tables) => {
-                        let total = tables.into_iter().fold(0, |a, t| a + t.1);
-                        write!(&mut msg, ":white_check_mark: DB table size total: {}", formatter(total))?;
-                    },
-                    Err(e) => {
-                        err_lvl = err_lvl.max(2);
-                        let err = format!(":x: DB table size error: {:?}", e);
-                        error!("Error getting DB table sizes: {}", err);
-                        msg.push_str(&err);
+                    match data.db_available_space() {
+                        Ok(bytes) if bytes > DISK_SPACE_WARNING_LEVEL => {
+                            write!(&mut msg, ":white_check_mark: Disk space ok: {}", formatter(bytes))?;
+                        },
+                        Ok(bytes) => {
+                            err_lvl = err_lvl.max(1);
+                            write!(&mut msg, ":x: Disk space low: {}", formatter(bytes))?;
+                        },
+                        Err(e) => {
+                            err_lvl = err_lvl.max(2);
+                            let err = format!(":x: Disk space error: {:?}", e);
+                            error!("Error checking disk space: {}", err);
+                            msg.push_str(&err);
+                        }
                     }
-                }
-                msg.push('\n');
+                    msg.push('\n');
 
-                match run_promote(&data, &ctx, guild.id.into(), None).await {
-                    Ok(OptionallyConfiguredResult::Ok(promotions)) => {
-                        write!(&mut msg, ":white_check_mark: {}", promotions)?;
-                    },
-                    Ok(OptionallyConfiguredResult::Unconfigured(key)) => {
-                        err_lvl = err_lvl.max(1);
-                        write!(&mut msg, ":grey_question: Promote not configured: {}", key)?;
-                    },
-                    Err(e) => {
-                        err_lvl = err_lvl.max(2);
-                        let err = format!(":x: Promote error: {:?}", e);
-                        error!("Error running promotions: {}", err);
-                        msg.push_str(&err);
+                    match data.db_table_sizes().await {
+                        Ok(tables) => {
+                            let total = tables.into_iter().fold(0, |a, t| a + t.1);
+                            write!(&mut msg, ":white_check_mark: DB table size total: {}", formatter(total))?;
+                        },
+                        Err(e) => {
+                            err_lvl = err_lvl.max(2);
+                            let err = format!(":x: DB table size error: {:?}", e);
+                            error!("Error getting DB table sizes: {}", err);
+                            msg.push_str(&err);
+                        }
                     }
+                    msg.push('\n');
+
+                    match run_promote(&data, &ctx, guild.id.into(), None).await {
+                        Ok(OptionallyConfiguredResult::Ok(promotions)) => {
+                            write!(&mut msg, ":white_check_mark: {}", promotions)?;
+                        },
+                        Ok(OptionallyConfiguredResult::Unconfigured(key)) => {
+                            err_lvl = err_lvl.max(1);
+                            write!(&mut msg, ":grey_question: Promote not configured: {}", key)?;
+                        },
+                        Err(e) => {
+                            err_lvl = err_lvl.max(2);
+                            let err = format!(":x: Promote error: {:?}", e);
+                            error!("Error running promotions: {}", err);
+                            msg.push_str(&err);
+                        }
+                    }
+                    msg.push('\n');
+
+                    write!(&mut msg, "\nNext run: <t:{0}> (<t:{0}:R>)", next_run.timestamp())?;
+
+                    embed.flavour = Some(match err_lvl {
+                        0 => EmbedFlavour::Success,
+                        1 => EmbedFlavour::Normal,
+                        _ => EmbedFlavour::Error,
+                    });
+
+                    
+                    if let Some(log_channel_id) = log_channel_id {
+                        embed = embed.description(msg);
+                        if let Err(e) = embed
+                            .send_in_channel(log_channel_id, &ctx.http)
+                            .await
+                        {
+                            error!("Error posting in general log channel in background_tasks for guild: {} ({}): {:?}", guild.name, guild.id, e);
+                        }
+                    } else {
+                        warn!("No log channel configured for background task logging: {}", msg);
+                    }
+
+                    Ok(())
                 }
-                msg.push('\n');
-
-                write!(&mut msg, "\nNext run: <t:{0}> (<t:{0}:R>)", next_run.timestamp())?;
-
-                embed.flavour = Some(match err_lvl {
-                    0 => EmbedFlavour::Success,
-                    1 => EmbedFlavour::Normal,
-                    _ => EmbedFlavour::Error,
-                });
-
-                embed = embed.description(msg);
-
-                if let Err(e) = embed
-                    .send_in_channel(log_channel_id, &ctx.http)
-                    .await
-                {
-                    error!("Error posting in general log channel in background_tasks for guild: {} ({}): {:?}", guild.name, guild.id, e);
-                }
+                .instrument(span)
+                .await?
             },
         }
     }
@@ -535,14 +544,7 @@ async fn handle_guild_create<'a>(
     guild: &Guild,
 ) -> Result<(), Error> {
     poise::builtins::register_in_guild(ctx, &framework.options().commands, guild.id).await?;
-    let channel_id = data
-        .general_log_channel(guild.id.into())
-        .await?
-        .or(guild.system_channel_id.map(|v| v.into()))
-        .or(guild
-            .default_channel_guaranteed()
-            .map(|c| c.id)
-            .map(|v| v.into()));
+    let channel_id = data.general_log_channel_or_default(guild).await?;
     if let Some(chan) = channel_id {
         let now = Utc::now().timestamp();
         Embed::default()

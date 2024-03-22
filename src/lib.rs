@@ -1,4 +1,4 @@
-use std::{fmt::Debug, path::PathBuf, time::Duration};
+use std::{ffi::c_int, fmt::Debug, path::PathBuf, time::{Duration, Instant}};
 
 use db::{
     queries::config::{ConfigKey, LogChannel},
@@ -13,6 +13,7 @@ use poise::serenity_prelude::{Guild, Member, Message, Timestamp, User};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use rusqlite_migration::Migrations;
 use tokio::sync::oneshot;
+use tracing::{error, info, trace, warn};
 
 pub mod message_count;
 
@@ -30,7 +31,8 @@ pub mod permissions;
 
 mod embed;
 pub use embed::*;
-use tracing::debug;
+use tracing::{debug, instrument};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 pub mod commands;
 pub mod discord_commands;
@@ -95,6 +97,16 @@ impl BotData {
 
     pub async fn general_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>, Error> {
         self.log_channel(guild_id, vec![LogChannel::General]).await
+    }
+
+    pub async fn general_log_channel_or_default(&self, guild: &Guild) -> Result<Option<ChannelId>, Error> {
+        Ok(self.general_log_channel(guild.id.into())
+            .await?
+            .or(guild.system_channel_id.map(|v| v.into()))
+            .or(guild
+                .default_channel_guaranteed()
+                .map(|c| c.id)
+                .map(|v| v.into())))
     }
 
     pub async fn error_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>, Error> {
@@ -446,6 +458,16 @@ impl BotData {
         Ok(r.await??)
     }
 
+    pub async fn db_optimize(&self) -> Result<Duration, Error> {
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::Optimize { 
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }
+
     pub async fn get_config_u64(&self, guild_id: GuildId, key: ConfigKey) -> Result<Option<u64>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
@@ -496,12 +518,36 @@ pub fn configure_tracing() {
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_line_number(true)
             .with_file(true)
+            .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
             .finish(),
     )
     .expect("Failed to set default tracing subscriber");
 }
 
+fn sqlite_tracing_callback(sqlite_code: c_int, msg: &str) {
+    use rusqlite::ffi;
+    let err_code = ffi::Error::new(sqlite_code);
+    
+    // See https://www.sqlite.org/rescode.html for description of result codes.
+    match sqlite_code & 0xff {
+        ffi::SQLITE_NOTICE => info!(target: "sqlite", msg, %err_code, "SQLITE NOTICE"),
+        ffi::SQLITE_WARNING => warn!(target: "sqlite", msg, %err_code, "SQLITE WARNING"),
+        _ => error!(target: "sqlite", msg, %err_code, "SQLITE ERROR"),
+    };
+}
+
+fn sqlite_connection_profiling_callback(query: &str, duration: Duration) {
+    trace!(target: "sqlite_profiling", ?duration, query);
+}
+
+
+#[instrument]
 pub fn open_database(connection_string: &str, create: bool) -> Result<Connection, Error> {
+    // Configure the tracing callback before opening the database
+    unsafe {
+        rusqlite::trace::config_log(Some(sqlite_tracing_callback))?;
+    }
+
     let mut open_flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_URI
         | OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -511,6 +557,7 @@ pub fn open_database(connection_string: &str, create: bool) -> Result<Connection
     }
 
     let mut con = Connection::open_with_flags(connection_string, open_flags)?;
+    con.profile(Some(sqlite_connection_profiling_callback));
 
     let migrations = Migrations::from_directory(&MIGRATIONS_DIR)?;
     migrations.to_latest(&mut con)?;
@@ -525,10 +572,20 @@ pub fn open_database(connection_string: &str, create: bool) -> Result<Connection
     Ok(con)
 }
 
-pub fn close_database(con: Connection) -> Result<(), Error> {
+/// Runs an optimize on the database. Should be run periodically to keep the
+/// database running optimally. It should be very fast if run regularly
+#[instrument]
+pub fn optimize_database(con: &Connection) -> Result<Duration, Error> {
+    let start = Instant::now();
     con.pragma_update(None, "analysis_limit", "400")?;
     con.pragma_update(None, "optimize", "")?;
-    con.pragma_update(None, "foreign_keys", "ON")?;
+
+    Ok(start.elapsed())
+}
+
+#[instrument]
+pub fn close_database(con: Connection) -> Result<(), Error> {
+    optimize_database(&con)?;
 
     if let Err((_con, e)) = con.close() {
         Err(e)?;
