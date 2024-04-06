@@ -1,21 +1,16 @@
-use std::{ffi::c_int, fmt::Debug, path::PathBuf, time::{Duration, Instant}};
+use std::{fmt::Debug, os::unix::fs::MetadataExt, path::PathBuf, time::Duration};
 
 use db::{
-    queries::config::{ConfigKey, LogChannel},
-    DbCommand,
+    queries::{
+        config::{ConfigKey, LogChannel},
+        interaction_roles::InteractionRole,
+        message_log::{LogType, MessageLog},
+        permissions::{EffectivePermission, Permission},
+    }, CompressionState, DbCommand
 };
-use include_dir::{include_dir, Dir};
-use interaction_roles::InteractionRole;
 use lazy_regex::{regex, Captures};
-use message_log::{LogType, MessageLog};
-use permissions::{EffectivePermission, Permission};
 use poise::serenity_prelude::{Guild, Member, Message, Timestamp, User};
-use rusqlite::{Connection, OpenFlags, TransactionBehavior};
-use rusqlite_migration::Migrations;
 use tokio::sync::oneshot;
-use tracing::{error, info, trace, warn};
-
-pub mod message_count;
 
 mod ids;
 pub use ids::*;
@@ -25,13 +20,8 @@ pub mod db;
 mod error;
 pub use error::*;
 
-pub mod interaction_roles;
-pub mod message_log;
-pub mod permissions;
-
 mod embed;
 pub use embed::*;
-use tracing::{debug, instrument};
 use tracing_subscriber::fmt::format::FmtSpan;
 
 pub mod commands;
@@ -65,7 +55,18 @@ pub const CACHE_MAX_MESSAGES: usize = 200;
 
 pub const DISK_SPACE_WARNING_LEVEL: u64 = 5 * 1024 * 1024 * 1024;
 
-static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
+pub fn configure_tracing() {
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_line_number(true)
+            .with_file(true)
+            .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
+            .finish(),
+    )
+    .expect("Failed to set default tracing subscriber");
+}
 
 #[derive(Debug, Clone)]
 pub struct BotData {
@@ -93,6 +94,14 @@ impl BotData {
         }
 
         Ok(fs2::available_space(self.db_file_path.as_ref().unwrap())?)
+    }
+
+    pub fn db_file_size(&self) -> Result<u64, Error> {
+        if self.db_file_path.is_none() {
+            Err(anyhow::anyhow!("DB appears to not be disk backed? Can't check the available space"))?;
+        }
+
+        Ok(self.db_file_path.as_ref().unwrap().metadata()?.size())
     }
 
     pub async fn general_log_channel(&self, guild_id: GuildId) -> Result<Option<ChannelId>, Error> {
@@ -388,9 +397,6 @@ impl BotData {
 
     pub async fn log_message(
         &self,
-        guild_id: GuildId,
-        user_id: Option<UserId>,
-        channel_id: ChannelId,
         message_id: MessageId,
         timestamp: Timestamp,
         type_: LogType,
@@ -399,9 +405,6 @@ impl BotData {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::LogMessage {
-                guild_id,
-                user_id,
-                channel_id,
                 message_id,
                 timestamp,
                 type_,
@@ -414,15 +417,11 @@ impl BotData {
 
     pub async fn get_message_log(
         &self,
-        guild_id: GuildId,
-        channel_id: ChannelId,
         message_id: MessageId,
     ) -> Result<Vec<MessageLog>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetLogMessages {
-                guild_id,
-                channel_id,
                 message_id,
                 respond_to: s,
             })
@@ -430,28 +429,38 @@ impl BotData {
         Ok(r.await??)
     }
 
-    pub async fn lookup_user_from_message(
-        &self,
-        guild_id: GuildId,
-        channel_id: ChannelId,
-        message_id: MessageId,
-    ) -> Result<Option<UserId>, Error> {
-        let (s, r) = oneshot::channel();
-        self.db_command_sender
-            .send_async(DbCommand::GetUserFromLogMessages {
-                guild_id,
-                channel_id,
-                message_id,
-                respond_to: s,
-            })
-            .await?;
-        Ok(r.await??)
-    }
+    // pub async fn lookup_user_from_message(
+    //     &self,
+    //     guild_id: GuildId,
+    //     channel_id: ChannelId,
+    //     message_id: MessageId,
+    // ) -> Result<Option<UserId>, Error> {
+    //     let (s, r) = oneshot::channel();
+    //     self.db_command_sender
+    //         .send_async(DbCommand::GetUserFromLogMessages {
+    //             guild_id,
+    //             channel_id,
+    //             message_id,
+    //             respond_to: s,
+    //         })
+    //         .await?;
+    //     Ok(r.await??)
+    // }
 
     pub async fn db_table_sizes(&self) -> Result<Vec<(String, u64, u64)>, Error> {
         let (s, r) = oneshot::channel();
         self.db_command_sender
             .send_async(DbCommand::GetTableBytesAndCount {
+                respond_to: s,
+            })
+            .await?;
+        Ok(r.await??)
+    }
+
+    pub async fn db_compression_state(&self) -> Result<CompressionState, Error> {
+        let (s, r) = oneshot::channel();
+        self.db_command_sender
+            .send_async(DbCommand::GetCompressionState {
                 respond_to: s,
             })
             .await?;
@@ -511,88 +520,7 @@ pub fn expand_greeting_template(user: &User, message: &mut String) {
 pub type PoiseError = Error;//Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, BotData, Error>;
 
-pub fn configure_tracing() {
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .with_line_number(true)
-            .with_file(true)
-            .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
-            .finish(),
-    )
-    .expect("Failed to set default tracing subscriber");
-}
 
-fn sqlite_tracing_callback(sqlite_code: c_int, msg: &str) {
-    use rusqlite::ffi;
-    let err_code = ffi::Error::new(sqlite_code);
-    
-    // See https://www.sqlite.org/rescode.html for description of result codes.
-    match sqlite_code & 0xff {
-        ffi::SQLITE_NOTICE => info!(target: "sqlite", msg, %err_code, "SQLITE NOTICE"),
-        ffi::SQLITE_WARNING => warn!(target: "sqlite", msg, %err_code, "SQLITE WARNING"),
-        _ => error!(target: "sqlite", msg, %err_code, "SQLITE ERROR"),
-    };
-}
-
-fn sqlite_connection_profiling_callback(query: &str, duration: Duration) {
-    trace!(target: "sqlite_profiling", ?duration, query);
-}
-
-
-#[instrument]
-pub fn open_database(connection_string: &str, create: bool) -> Result<Connection, Error> {
-    // Configure the tracing callback before opening the database
-    unsafe {
-        rusqlite::trace::config_log(Some(sqlite_tracing_callback))?;
-    }
-
-    let mut open_flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-        | OpenFlags::SQLITE_OPEN_URI
-        | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-
-    if create {
-        open_flags |= OpenFlags::SQLITE_OPEN_CREATE;
-    }
-
-    let mut con = Connection::open_with_flags(connection_string, open_flags)?;
-    con.profile(Some(sqlite_connection_profiling_callback));
-
-    let migrations = Migrations::from_directory(&MIGRATIONS_DIR)?;
-    migrations.to_latest(&mut con)?;
-
-    con.pragma_update(None, "journal_mode", "WAL")?;
-    con.pragma_update(None, "synchronous", "NORMAL")?;
-    con.pragma_update(None, "foreign_keys", "ON")?;
-
-    debug!("Checking DB is writable");
-    con.transaction_with_behavior(TransactionBehavior::Exclusive)?;
-
-    Ok(con)
-}
-
-/// Runs an optimize on the database. Should be run periodically to keep the
-/// database running optimally. It should be very fast if run regularly
-#[instrument]
-pub fn optimize_database(con: &Connection) -> Result<Duration, Error> {
-    let start = Instant::now();
-    con.pragma_update(None, "analysis_limit", "400")?;
-    con.pragma_update(None, "optimize", "")?;
-
-    Ok(start.elapsed())
-}
-
-#[instrument]
-pub fn close_database(con: Connection) -> Result<(), Error> {
-    optimize_database(&con)?;
-
-    if let Err((_con, e)) = con.close() {
-        Err(e)?;
-    }
-
-    Ok(())
-}
 
 pub fn load_dotenv() -> Result<Option<PathBuf>, dotenv::Error> {
     match dotenv::dotenv() {

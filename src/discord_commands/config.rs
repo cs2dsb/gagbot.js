@@ -5,7 +5,7 @@ use tokio::sync::oneshot;
 
 use crate::{
     db::{queries::config::ConfigKey, DbCommand},
-    permissions::{Permission, PermissionCheck},
+    db::queries::permissions::{Permission, PermissionCheck},
     Context, Embed, PoiseError,
 };
 

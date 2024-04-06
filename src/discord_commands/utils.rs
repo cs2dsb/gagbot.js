@@ -3,7 +3,7 @@ use std::fmt::{Write, Display};
 use humansize::{make_format, BINARY};
 
 use crate::{
-    permissions::{Permission, PermissionCheck},
+    db::queries::permissions::{Permission, PermissionCheck},
     Context, Embed, PoiseError, db::queries::config::ConfigKey, get_config_u64_option, get_config_role_option, get_config_chan_option, get_config_string_option, Error,
 };
 
@@ -14,6 +14,40 @@ pub async fn help(
     #[description = "Command to display specific information about"] command: Option<String>,
 ) -> Result<(), PoiseError> {
     poise::builtins::help(ctx, command.as_deref(), Default::default()).await?;
+    Ok(())
+}
+
+
+#[poise::command(prefix_command, slash_command, category = "Utils")]
+/// Get the compression state of the message log
+pub async fn get_compression_state(ctx: Context<'_>) -> Result<(), PoiseError> {
+    ctx.defer_ephemeral().await?;
+    ctx.require_permission(Permission::ConfigManage).await?;
+
+    let sizes = ctx.data().db_compression_state().await?;
+
+    let bytes_formatter = make_format(BINARY);
+
+    let msg = format!(r"```CompressionState {{
+    uncompressed_messages: {},
+    uncompressed_bytes: {},
+    compressed_messages: {},
+    compressed_bytes: {},
+    chunks: {},
+}}```",
+        sizes.uncompressed_messages,
+        bytes_formatter(sizes.uncompressed_bytes),
+        sizes.compressed_messages,
+        bytes_formatter(sizes.compressed_bytes),
+        sizes.chunks,
+    );
+
+    Embed::success()
+        .title("Compression State")
+        .description(msg)
+        .send(&ctx)
+        .await?;
+
     Ok(())
 }
 

@@ -5,7 +5,7 @@ use tracing::error;
 
 use crate::{
     commands::promote::{run_promote, OptionallyConfiguredResult},
-    permissions::{Permission, PermissionCheck},
+    db::queries::permissions::{Permission, PermissionCheck},
     Context, Embed, EmbedFlavour, PoiseError,
 };
 

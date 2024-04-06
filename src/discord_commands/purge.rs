@@ -9,10 +9,12 @@ use poise::{
 
 use crate::{
     ErrorContext,
-    db::queries::config::LogChannel,
-    message_log::LogType,
-    permissions::{Permission, PermissionCheck},
-    with_progress_embed, BotData, Context, PoiseError, GuildId, UserId, commands::promote::OptionallyConfiguredResult,
+    db::queries::{
+        config::LogChannel,
+        message_log::LogType,
+        permissions::{Permission, PermissionCheck},
+    },
+    with_progress_embed, BotData, Context, PoiseError, commands::promote::OptionallyConfiguredResult,
 };
 
 #[poise::command(prefix_command, slash_command, category = "Utils")]
@@ -37,14 +39,12 @@ pub async fn purge<'a>(
 
     async fn work<'a, Ctx>(
         ctx: &'a Ctx,
-        (guild_id, channel_id, after_id, filter_user, until_timestamp, data, bot_id, mut limit): (
-            GuildId,
+        (channel_id, after_id, filter_user, until_timestamp, data, mut limit): (
             ChannelId,
             String,
             Option<User>,
             Timestamp,
             &BotData,
-            UserId,
             u64,
         ),
         progress_chan: flume::Sender<String>,
@@ -64,9 +64,7 @@ pub async fn purge<'a>(
         async fn delete_batch<'a, Ctx: 'a + CacheHttp + AsRef<Http>>(
             ctx: Ctx,
             data: &BotData,
-            guild_id: &GuildId,
             channel_id: &ChannelId,
-            bot_id: &UserId,
             batch: &mut Vec<MessageId>,
             progress_chan: &flume::Sender<String>,
         ) -> Result<(), PoiseError> {
@@ -79,9 +77,6 @@ pub async fn purge<'a>(
                 // reverts it
                 for id in batch.iter() {
                     data.log_message(
-                        *guild_id,
-                        Some(*bot_id),
-                        channel_id.into(),
                         id.into(),
                         now,
                         LogType::Purge,
@@ -124,9 +119,7 @@ pub async fn purge<'a>(
                 delete_batch(
                     ctx,
                     data,
-                    &guild_id,
                     &channel_id,
-                    &bot_id,
                     &mut batch,
                     &progress_chan,
                 )
@@ -136,9 +129,7 @@ pub async fn purge<'a>(
         delete_batch(
             ctx,
             data,
-            &guild_id,
             &channel_id,
-            &bot_id,
             &mut batch,
             &progress_chan,
         )
@@ -162,13 +153,11 @@ pub async fn purge<'a>(
         PURGE_TITLE,
         work,
         (
-            guild_id.into(),
             channel_id,
             after_id,
             filter_user,
             until_timestamp,
             ctx.data(),
-            ctx.framework().bot_id.into(),
             limit,
         ),
     )

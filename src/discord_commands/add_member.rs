@@ -4,8 +4,8 @@ use poise::{self, serenity_prelude::Member};
 use tracing::error;
 
 use crate::{
-    commands::{add_member::run_add_member, promote::{OptionallyConfiguredResult}},
-    permissions::{Permission, PermissionCheck},
+    commands::{add_member::run_add_member, promote::OptionallyConfiguredResult},
+    db::queries::permissions::{Permission, PermissionCheck},
     Context, Embed, EmbedFlavour, PoiseError,
 };
 

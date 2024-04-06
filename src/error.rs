@@ -1,5 +1,8 @@
 use std::fmt;
-use crate::{permissions::Permission, db::DbCommand};
+use crate::db::{
+    queries::permissions::Permission, 
+    DbCommand,
+};
 
 pub const OBFUSCATED_ERROR_MSG: &str = "An error occured";
 
@@ -89,6 +92,10 @@ pub enum Error {
     ChronoOutOfRange(#[from] chrono::OutOfRangeError),
     #[error("mongodb::error::Error: {0}")]
     Mongo(#[from] mongodb::error::Error),
+    #[error("croner::errors::CronError: {0}")]
+    Cron(#[from] croner::errors::CronError),
+    #[error("corncobs::CobsError: {0}")]
+    CornCobs(#[from] corncobs::CobsError),
     
     #[cfg_attr(not(feature = "nightly"), error("WithContext [{0}]: {1}"))]
     #[cfg_attr(feature = "nightly", error("WithContext [{0}]: {1}\nBacktrace:\n{2}"))]

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Exit when any command fails
+set -o errexit
+
+# Exit when an undeclared variable is used
+set -o nounset
+
+# Exit when a piped command returns a non-zero exit code
+set -o pipefail
+
+# set -x
+
+readonly repo_dir="$( cd $(dirname ${BASH_SOURCE}); pwd )"
+
+cargo build --release --bin migrate_and_vacuum --bin compression_test
+
+if [ "${1:-}" = "purge" ]; then
+    rm -f gagbot.sqlite
+    zstd --decompress gagbot.sqlite.zst
+fi
+
+target/release/migrate_and_vacuum
+target/release/compression_test

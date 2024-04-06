@@ -6,17 +6,12 @@ use std::{fmt::{Write, Display}, num::ParseIntError, time::Duration};
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use futures::future::join;
+use futures::future::{join, select, Either};
 use gagbot_rs::{
-    commands::{promote::{run_promote, OptionallyConfiguredResult}, log::log, greet::{run_greet, GreetBehaviour}},
+    commands::{greet::{run_greet, GreetBehaviour}, log::log, promote::{run_promote, OptionallyConfiguredResult}},
     db::{
-        queries::{
-            self,
-            config::{self, LogChannel},
-        },
-        DbCommand,
+        background_jobs::spawn_db_background_jobs_task, open_database, queries::{config::LogChannel, message_log::{LogType, MessageLog}}, spawn_db_task, DbCommand
     },
-    message_log::{LogType, MessageLog},
     *,
 };
 use humansize::{make_format, BINARY};
@@ -28,9 +23,7 @@ use poise::{
     },
     FrameworkContext, FrameworkError,
 };
-use tokio::{
-    sync::oneshot::Sender, time
-};
+use tokio::time;
 use tracing::*;
 
 fn frequency_seconds_valid_range(s: &str) -> Result<u64, String> {
@@ -71,99 +64,12 @@ async fn main() -> Result<(), Error> {
 
     // Open the DB before launching the task so we can fail before trying to connect
     // to discord
-    let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let sqlite_con = open_database(&args.sqlite_connection_string, true)?;
     let db_file_path = sqlite_con.path().map(|p| p.to_owned());
     let (sender, receiver) = flume::bounded::<DbCommand>(args.database_command_channel_bound);
 
-    fn respond<T, E>(respond_to: Sender<Result<T, E>>, response: Result<T, E>, cmd_name: &str) -> Result<(), Error> {
-        respond_to.send(response)
-            .map_err(|_| anyhow::anyhow!("{cmd_name} respond_to oneshot closed"))?;
-        Ok(())
-    }
-
-    let db_task_handle = tokio::task::spawn_blocking(move || {
-        debug!("DB TASK: started");
-        loop {
-            match receiver.recv() {
-                // The only error it returns is Disconnected (which we use to shut down)
-                Err(_) => break,
-                Ok(cmd) => {
-                    let cmd_name = cmd.to_string();
-                    let _span = span!(Level::INFO, "DB TASK", cmd = cmd_name).entered();
-                    match cmd {
-                        DbCommand::Optimize { respond_to } => {
-                            respond(respond_to, optimize_database(&sqlite_con), &cmd_name)?;
-                        },
-                        DbCommand::GetConfigString { guild_id, key, respond_to } => {
-                            respond(respond_to, config::get(&sqlite_con, guild_id, key), &cmd_name)?;
-                        },
-                        DbCommand::GetConfigI64 { guild_id, key, respond_to } => {
-                            respond(respond_to, config::get(&sqlite_con, guild_id, key), &cmd_name)?;
-                        },
-                        DbCommand::GetConfigU64 { guild_id, key, respond_to } => {
-                            respond(respond_to, config::get(&sqlite_con, guild_id, key), &cmd_name)?;
-                        },
-                        DbCommand::SetConfigString { guild_id, key, value, timestamp, respond_to } => {
-                            respond(respond_to, config::update(&sqlite_con, guild_id, key, &value, timestamp), &cmd_name)?;
-                        },
-                        DbCommand::DeleteConfig { guild_id, key, timestamp, respond_to } => {
-                            respond(respond_to, config::delete(&sqlite_con, guild_id, key, timestamp), &cmd_name)?;
-                        },
-                        DbCommand::GetLogChannel { guild_id, purpose, respond_to } => {
-                            respond(respond_to, config::get_log_channel(&sqlite_con, guild_id, &purpose), &cmd_name)?;
-                        },
-                        DbCommand::GetMessageCount { guild_id, user_id, channel_id, respond_to } => {
-                            respond(respond_to, message_count::get(&sqlite_con, guild_id, user_id, channel_id), &cmd_name)?;
-                        },
-                        DbCommand::IncrementMessageCount { guild_id, user_id, channel_id, respond_to } => {
-                            respond(respond_to, message_count::increment(&sqlite_con, guild_id, user_id, channel_id), &cmd_name)?;
-                        },
-                        DbCommand::GetGreet { guild_id, respond_to } => {
-                            respond(respond_to, config::get_greet(&sqlite_con, guild_id), &cmd_name)?;
-                        },
-                        DbCommand::GetMemberPermissions { guild_id, sorted_roles, respond_to } => {
-                            respond(respond_to, permissions::get(&sqlite_con, guild_id, sorted_roles), &cmd_name)?;
-                        },
-                        DbCommand::GrantPermission { guild_id, role_id, permission, respond_to, timestamp } => {
-                            respond(respond_to, permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp), &cmd_name)?;
-                        },
-                        DbCommand::RevokePermission { guild_id, role_id, permission, respond_to, timestamp } => {
-                            respond(respond_to, permissions::grant(&sqlite_con, guild_id, role_id, permission, timestamp), &cmd_name)?;
-                        },
-                        DbCommand::PurgePermissions { guild_id, respond_to, timestamp } => {
-                            respond(respond_to, permissions::purge(&mut sqlite_con, guild_id, timestamp), &cmd_name)?;
-                        },
-                        DbCommand::UpdateInteractionRoleSet { guild_id, name, description, channel_id, message_id, exclusive, timestamp, respond_to } => {
-                            respond(respond_to, interaction_roles::update(&sqlite_con, guild_id, name, description, channel_id, message_id, exclusive, timestamp), &cmd_name)?;
-                        },
-                        DbCommand::GetInteractionRole { guild_id, name, respond_to } => {
-                            respond(respond_to, interaction_roles::get(&sqlite_con, guild_id, name ), &cmd_name)?;
-                        },
-                        DbCommand::UpdateInteractionRoleChoice { guild_id, set_name, choice, emoji, role_id, timestamp, respond_to } => {
-                            respond(respond_to, interaction_roles::update_choice(&sqlite_con, guild_id, set_name, choice, emoji, role_id, timestamp ), &cmd_name)?;
-                        },
-                        DbCommand::LogMessage { guild_id, user_id, channel_id, message_id, timestamp, type_, message, respond_to } => {
-                            respond(respond_to, message_log::log(&sqlite_con, guild_id, user_id, channel_id, message_id, timestamp, type_, message), &cmd_name)?;
-                        },
-                        DbCommand::GetLogMessages { guild_id, channel_id, message_id, respond_to } => {
-                            respond(respond_to, message_log::get(&sqlite_con, guild_id, channel_id, message_id), &cmd_name)?;
-                        },
-                        DbCommand::GetUserFromLogMessages{ guild_id, channel_id, message_id, respond_to } => {
-                            respond(respond_to, message_log::get_user(&sqlite_con, guild_id, channel_id, message_id), &cmd_name)?;
-                        },
-                        DbCommand::GetTableBytesAndCount { respond_to } => {
-                            respond(respond_to, queries::get_table_size_in_bytes(&sqlite_con), &cmd_name)?;
-                        }
-                    }
-                },
-            }
-        }
-        debug!("DB TASK: exiting");
-
-        close_database(sqlite_con)?;
-
-        Ok::<_, anyhow::Error>(())
-    });
+    let db_background_task_handle = spawn_db_background_jobs_task(sender.clone());
+    let db_task_handle = spawn_db_task(sqlite_con, receiver);
 
     let options = poise::FrameworkOptions {
         commands: discord_commands::commands(),
@@ -218,11 +124,18 @@ async fn main() -> Result<(), Error> {
         // Don't need to do anything special in this case as the dropped sender will cause the db
         // task to stop
         framework.start(),
+
         // In this case however, if the db exits first the framework needs to be shut down
         async move {
-            let r = db_task_handle.await;
+            let r = select(
+                db_task_handle, 
+                db_background_task_handle,
+            ).await;
             shard_manager_handle.lock().await.shutdown_all().await;
-            r
+            match r {
+                Either::Left((r, _)) => r,
+                Either::Right((r, _)) => r,
+            }
         },
     )
     .await;
@@ -250,7 +163,7 @@ async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> Result<(
     loop {
         tokio::select! {
             _ = tick_interval.tick() => {                
-                let span = span!(Level::INFO, "Running background tasks");
+                let span = span!(Level::INFO, "Running guild background tasks");
                 
                 async {
                     let next_run: DateTime<Utc> = Utc::now() + tick_duration;
@@ -270,20 +183,6 @@ async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> Result<(
                     // 0 = ok, 1 = warn, 2 = error
                     let mut err_lvl = 0;
 
-                    // TODO: this will be run once for each connected guild, this is not exactly what we want with one shared DB
-                    match data.db_optimize().await {
-                        Ok(duration) => {
-                            write!(&mut msg, ":white_check_mark: DB optimize ran OK in {} μs", duration.as_micros())?;
-                        },
-                        Err(e) => {
-                            err_lvl = err_lvl.max(1);
-                            let err = format!(":x: DB optimize error: {:?}", e);
-                            error!("Error optimizing DB: {}", err);
-                            msg.push_str(&err);
-                        }
-                    }
-                    msg.push('\n');
-
                     match data.db_available_space() {
                         Ok(bytes) if bytes > DISK_SPACE_WARNING_LEVEL => {
                             write!(&mut msg, ":white_check_mark: Disk space ok: {}", formatter(bytes))?;
@@ -301,19 +200,32 @@ async fn background_tasks(data: BotData, ctx: Context, guild: Guild) -> Result<(
                     }
                     msg.push('\n');
 
-                    match data.db_table_sizes().await {
-                        Ok(tables) => {
-                            let total = tables.into_iter().fold(0, |a, t| a + t.1);
-                            write!(&mut msg, ":white_check_mark: DB table size total: {}", formatter(total))?;
+                    match data.db_file_size() {
+                        Ok(bytes) => {
+                            write!(&mut msg, ":white_check_mark: DB size: {}", formatter(bytes))?;
                         },
                         Err(e) => {
                             err_lvl = err_lvl.max(2);
-                            let err = format!(":x: DB table size error: {:?}", e);
-                            error!("Error getting DB table sizes: {}", err);
+                            let err = format!(":x: DB size error: {:?}", e);
+                            error!("Error checking DB size: {}", err);
                             msg.push_str(&err);
                         }
                     }
                     msg.push('\n');
+
+                    // match data.db_table_sizes().await {
+                    //     Ok(tables) => {
+                    //         let total = tables.into_iter().fold(0, |a, t| a + t.1);
+                    //         write!(&mut msg, ":white_check_mark: DB table size total: {}", formatter(total))?;
+                    //     },
+                    //     Err(e) => {
+                    //         err_lvl = err_lvl.max(2);
+                    //         let err = format!(":x: DB table size error: {:?}", e);
+                    //         error!("Error getting DB table sizes: {}", err);
+                    //         msg.push_str(&err);
+                    //     }
+                    // }
+                    // msg.push('\n');
 
                     match run_promote(&data, &ctx, guild.id.into(), None).await {
                         Ok(OptionallyConfiguredResult::Ok(promotions)) => {
@@ -561,7 +473,12 @@ async fn handle_guild_create<'a>(
 }
 
 async fn handle_message_create(data: &BotData, new_message: &Message) -> Result<(), Error> {
-    Ok(if let Some(guild_id) = new_message.guild_id {
+    // Don't log bot messages
+    if new_message.author.bot {
+        return Ok(());
+    }
+
+    if let Some(guild_id) = new_message.guild_id {
         let user_id = new_message.author.id;
 
         let channel_id = new_message.channel_id;
@@ -571,16 +488,15 @@ async fn handle_message_create(data: &BotData, new_message: &Message) -> Result<
             .await?;
 
         data.log_message(
-            guild_id.into(),
-            Some(user_id.into()),
-            channel_id.into(),
             message_id.into(),
             new_message.timestamp,
             LogType::Create,
             Some(new_message.clone()),
         )
         .await?;
-    })
+    }
+
+    Ok(())
 }
 
 async fn handle_guild_member_remove(
@@ -630,7 +546,7 @@ async fn handle_message_delete(
     guild_id: &Option<serenity::GuildId>,
     channel_id: &serenity::ChannelId,
     deleted_message_ids: &Vec<serenity::MessageId>,
-    bulk_delete: bool,
+    _bulk_delete: bool,
 ) -> Result<(), Error> {
     // Only care to log stuff inside the guild
     let guild_id = match guild_id {
@@ -642,9 +558,6 @@ async fn handle_message_delete(
     let now = Timestamp::now();
     for deleted_message_id in deleted_message_ids.iter() {
         data.log_message(
-            guild_id.into(),
-            None,
-            channel_id.into(),
             deleted_message_id.into(),
             // Seems like serenity should provide the timestamp of the event from discord but it
             // doesn't seem to
@@ -664,28 +577,28 @@ async fn handle_message_delete(
         None => return Ok(()),
     };
 
-    // Attempt to get the audit log containing the delete
-    let audit_log = if let Some(guild) = ctx.cache.guild(guild_id) {
-        // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
-        let action_type = if bulk_delete { 72 } else { 73 };
-        match guild
-            .audit_logs(ctx, Some(action_type), None, None, None)
-            .await
-        {
-            Err(e) => {
-                error!("Error getting audit logs: {:?}", e);
-                None
-            }
-            Ok(logs) => Some(logs),
-        }
-    } else {
-        error!("Failed to get Guild instance from ctx.cache");
-        None
-    };
+    // // Attempt to get the audit log containing the delete
+    // let audit_log = if let Some(guild) = ctx.cache.guild(guild_id) {
+    //     // TODO: Magic number from https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
+    //     let action_type = if bulk_delete { 72 } else { 73 };
+    //     match guild
+    //         .audit_logs(ctx, Some(action_type), None, None, None)
+    //         .await
+    //     {
+    //         Err(e) => {
+    //             error!("Error getting audit logs: {:?}", e);
+    //             None
+    //         }
+    //         Ok(logs) => Some(logs),
+    //     }
+    // } else {
+    //     error!("Failed to get Guild instance from ctx.cache");
+    //     None
+    // };
 
     for deleted_message_id in deleted_message_ids.iter() {
         let mut is_bot = false;
-        let mut user_id = None;
+        //let mut user_id = None;
         let mut msg = format!("**Message {deleted_message_id} in <#{channel_id}> deleted**\n");
         let mut cache_hit = false;
 
@@ -696,7 +609,7 @@ async fn handle_message_delete(
                     .unwrap_or(" ".to_string())
                     .replace("\n", "\n> ");
                 is_bot = message.author.bot;
-                user_id = Some(message.author.id);
+                // user_id = Some(message.author.id);
                 let user_id = message.author.id.0;
                 let timestamp = message.timestamp.timestamp();
                 if !is_bot {
@@ -721,55 +634,53 @@ async fn handle_message_delete(
             write!(&mut msg, "*Deleted message was not in the cache.*\n")?;
         }
 
-        // Attempt to get the audit log entry for the delete
-        let mut audit_entry = None;
-        if let Some(audit_log) = audit_log.as_ref() {
-            if audit_log.entries.len() > 0 {
-                // We need a user_id as part of the check
-                if user_id.is_none() {
-                    match data
-                        .lookup_user_from_message(
-                            guild_id.into(),
-                            channel_id.into(),
-                            deleted_message_id.into(),
-                        )
-                        .await
-                    {
-                        Ok(user_id_) => user_id = user_id_.map(|v| *v),
-                        Err(e) => error!("Error looking up user_id from message log: {:?}", e),
-                    }
-                }
-                if let Some(user_id) = user_id {
-                    audit_entry = audit_log.entries.iter().find(|v| {
-                        if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
-                            if bulk_delete {
-                                // TODO: This basically never works. Not sure it's even possible
-                                if target_id == channel_id.0
-                                    && options.count == Some(deleted_message_ids.len() as u64)
-                                {
-                                    return true;
-                                }
-                            } else {
-                                if target_id == user_id.0
-                                    && options.channel_id.as_ref() == Some(channel_id)
-                                {
-                                    return true;
-                                }
-                            }
-                        }
-                        false
-                    });
-                } else {
-                    warn!("Couldn't get a user_id for a deleted message");
-                }
-            }
-        }
+        // // Attempt to get the audit log entry for the delete
+        // let mut audit_entry = None;
+        // if let Some(audit_log) = audit_log.as_ref() {
+        //     if audit_log.entries.len() > 0 {
+        //         // We need a user_id as part of the check
+        //         if user_id.is_none() {
+        //             match data
+        //                 .lookup_user_from_message(
+        //                     guild_id.into(),
+        //                     channel_id.into(),
+        //                     deleted_message_id.into(),
+        //                 )
+        //                 .await
+        //             {
+        //                 Ok(user_id_) => user_id = user_id_.map(|v| *v),
+        //                 Err(e) => error!("Error looking up user_id from message log: {:?}", e),
+        //             }
+        //         }
+        //         if let Some(user_id) = user_id {
+        //             audit_entry = audit_log.entries.iter().find(|v| {
+        //                 if let (Some(target_id), Some(options)) = (v.target_id, &v.options) {
+        //                     if bulk_delete {
+        //                         // TODO: This basically never works. Not sure it's even possible
+        //                         if target_id == channel_id.0
+        //                             && options.count == Some(deleted_message_ids.len() as u64)
+        //                         {
+        //                             return true;
+        //                         }
+        //                     } else {
+        //                         if target_id == user_id.0
+        //                             && options.channel_id.as_ref() == Some(channel_id)
+        //                         {
+        //                             return true;
+        //                         }
+        //                     }
+        //                 }
+        //                 false
+        //             });
+        //         } else {
+        //             warn!("Couldn't get a user_id for a deleted message");
+        //         }
+        //     }
+        // }
 
         if !is_bot {
             let log = log_message_history(
                 data,
-                guild_id.into(),
-                channel_id.into(),
                 deleted_message_id.into(),
                 &mut msg,
             )
@@ -780,13 +691,13 @@ async fn handle_message_delete(
                 .filter_map(|v| v.message.as_ref())
                 .any(|v| v.author.bot)
             {
-                if let Some(audit_entry) = audit_entry {
-                    let deleter = audit_entry.user_id.0;
-                    let timestamp = audit_entry.id.created_at().timestamp();
-                    write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
-                } else {
-                    write!(&mut msg, "\n*Nothing in the audit log matches (but it isn't a reliable check :person_shrugging:)*")?;
-                }
+                // if let Some(audit_entry) = audit_entry {
+                //     let deleter = audit_entry.user_id.0;
+                //     let timestamp = audit_entry.id.created_at().timestamp();
+                //     write!(&mut msg, "\n*Audit log indicates message was likely deleted by <@{deleter}> at <t:{timestamp}>*")?;
+                // } else {
+                //     write!(&mut msg, "\n*Nothing in the audit log matches (but it isn't a reliable check :person_shrugging:)*")?;
+                // }
 
                 Embed::default()
                     .flavour(EmbedFlavour::LogDelete)
@@ -807,41 +718,44 @@ async fn handle_message_update(
     old_if_available: &Option<Message>,
     new: &Option<Message>,
 ) -> Result<(), Error> {
-    Ok(
-        if let (Some(guild_id), Some(old), Some(new)) = (event.guild_id, old_if_available, new) {
-            let user = &old.author;
-            if !user.bot && old.content != new.content {
-                if let Some(channel_id) = data
-                    .log_channel(guild_id.into(), vec![LogChannel::EditsAndDeletes])
-                    .await?
-                {
-                    let channel_id_n = event.channel_id.0;
-                    let message_id = new.id.0;
-                    let user_id = user.id.0;
-                    let before = &old.content;
-                    let after = &new.content;
-                    let before_timestamp = old.timestamp.timestamp();
-                    let after_timestamp = new.timestamp.timestamp();
-                    Embed::default()
-                        .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
-                        .flavour(EmbedFlavour::LogEdit)
-                        .send_in_channel(channel_id, &ctx.http)
-                        .await?;
-                }
+    if let Some(message) = new {
+        // Don't log bot messages
+        if message.author.bot {
+            return Ok(());
+        }
+    }
+    if let (Some(guild_id), Some(old), Some(new)) = (event.guild_id, old_if_available, new) {
+        let user = &old.author;
+        if !user.bot && old.content != new.content {
+            if let Some(channel_id) = data
+                .log_channel(guild_id.into(), vec![LogChannel::EditsAndDeletes])
+                .await?
+            {
+                let channel_id_n = event.channel_id.0;
+                let message_id = new.id.0;
+                let user_id = user.id.0;
+                let before = &old.content;
+                let after = &new.content;
+                let before_timestamp = old.timestamp.timestamp();
+                let after_timestamp = new.timestamp.timestamp();
+                Embed::default()
+                    .description(format!("**Message {message_id} in <#{channel_id_n}> edited by <@{user_id}>**\n<t:{before_timestamp}> before:\n> {before}\n<t:{after_timestamp}> after:\n> {after}"))
+                    .flavour(EmbedFlavour::LogEdit)
+                    .send_in_channel(channel_id, &ctx.http)
+                    .await?;
             }
+        }
 
-            data.log_message(
-                guild_id.into(),
-                Some(new.author.id.into()),
-                new.channel_id.into(),
-                new.id.into(),
-                event.edited_timestamp.unwrap_or(Timestamp::now()),
-                LogType::Edit,
-                Some(new.clone()),
-            )
-            .await?;
-        },
-    )
+        data.log_message(
+            new.id.into(),
+            event.edited_timestamp.unwrap_or(Timestamp::now()),
+            LogType::Edit,
+            Some(new.clone()),
+        )
+        .await?;
+    }
+
+    Ok(())
 }
 
 fn message_to_string(message: &Message) -> Result<Option<String>, Error> {
@@ -886,13 +800,11 @@ fn message_to_string(message: &Message) -> Result<Option<String>, Error> {
 /// case it can be of futher use
 async fn log_message_history<'a, T: Write>(
     data: &'a BotData,
-    guild_id: GuildId,
-    channel_id: ChannelId,
     message_id: MessageId,
     mut w: T,
 ) -> Result<Vec<MessageLog>, Error> {
     let log = data
-        .get_message_log(guild_id, channel_id, message_id)
+        .get_message_log(message_id)
         .await?;
     let log_len = log.len();
     if log_len > 0 {
@@ -916,7 +828,7 @@ async fn log_message_history<'a, T: Write>(
             .flatten()
             .map(|v| v.replace("\n", "\n> "));
 
-        let user_id = entry.user_id.map(|v| v.0);
+        let user_id = entry.message.as_ref().map(|m| m.author.id.0);
 
         write!(w, "<t:{timestamp}>:  **{prefix}**")?;
         if let Some(user_id) = user_id {

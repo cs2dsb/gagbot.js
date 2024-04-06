@@ -50,6 +50,7 @@ pub fn commands() -> Vec<Command<BotData, PoiseError>> {
         config_help(),
         purge(),
         add_member(),
+        get_compression_state(),
     ]
 }
 

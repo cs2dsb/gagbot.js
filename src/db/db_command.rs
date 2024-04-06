@@ -4,17 +4,41 @@ use poise::serenity_prelude::{Message, Timestamp};
 use tokio::sync::oneshot::Sender;
 
 use crate::{
-    db::queries::config::{ConfigKey, LogChannel},
-    interaction_roles::InteractionRole,
-    message_log::{LogType, MessageLog},
-    permissions::{EffectivePermission, Permission},
+    db::queries::{
+        config::{ConfigKey, LogChannel},
+        interaction_roles::InteractionRole,
+        message_log::{LogType, MessageLog},
+        permissions::{EffectivePermission, Permission},
+    },
     ChannelId, GuildId, MessageId, RoleId, UserId, Error
 };
 
+
+pub type CommandSender = flume::Sender<DbCommand>;
+pub type CommandReceiver = flume::Receiver<DbCommand>;
+
+#[derive(Debug, Clone)]
+pub struct CompressionState {
+    pub uncompressed_messages: u64,
+    pub uncompressed_bytes: u64,
+    pub compressed_messages: u64,
+    pub compressed_bytes: u64,
+    pub chunks: u64,
+}
+
 #[derive(Debug, strum::Display)]
 pub enum DbCommand {
+    GetCompressionState {
+        respond_to: Sender<Result<CompressionState, Error>>,
+    },
     Optimize {
         respond_to: Sender<Result<Duration, Error>>,
+    },
+    Vacuum {
+        respond_to: Sender<Result<Duration, Error>>,
+    },
+    Compress {
+        respond_to: Sender<Result<(Duration, bool), Error>>,
     },
     GetGreet {
         guild_id: GuildId,
@@ -114,9 +138,6 @@ pub enum DbCommand {
         respond_to: Sender<Result<Option<InteractionRole>, Error>>,
     },
     LogMessage {
-        guild_id: GuildId,
-        user_id: Option<UserId>,
-        channel_id: ChannelId,
         message_id: MessageId,
         timestamp: Timestamp,
         type_: LogType,
@@ -124,17 +145,15 @@ pub enum DbCommand {
         respond_to: Sender<Result<(), Error>>,
     },
     GetLogMessages {
-        guild_id: GuildId,
-        channel_id: ChannelId,
         message_id: MessageId,
         respond_to: Sender<Result<Vec<MessageLog>, Error>>,
     },
-    GetUserFromLogMessages {
-        guild_id: GuildId,
-        channel_id: ChannelId,
-        message_id: MessageId,
-        respond_to: Sender<Result<Option<UserId>, Error>>,
-    },
+    // GetUserFromLogMessages {
+    //     guild_id: GuildId,
+    //     channel_id: ChannelId,
+    //     message_id: MessageId,
+    //     respond_to: Sender<Result<Option<UserId>, Error>>,
+    // },
     GetTableBytesAndCount {
         respond_to: Sender<Result<Vec<(String, u64, u64)>, Error>>,
     },

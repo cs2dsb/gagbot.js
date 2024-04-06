@@ -6,7 +6,7 @@ use poise::{
 };
 
 use crate::{
-    permissions::{Permission, PermissionCheck},
+    db::queries::permissions::{Permission, PermissionCheck},
     Context, Embed, EmbedFlavour, PoiseError,
 };
 

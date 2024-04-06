@@ -1,6 +1,6 @@
 [package]
 name = "gagbot-rs"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 
 [dependencies]
@@ -78,3 +78,14 @@ random_color = "0.6.1"
 # Helpful traits and macros for working with enums and strings 
 strum = { version = "0.26", features = ["derive"] }
 
+# Creates and cleans up temp directories
+temp-dir = "0.1.13"
+
+# Bindings for zstd compression library
+zstd = "0.13.0"
+
+# For parsing cron schedules and working out when to next run the job
+croner = "2.0.4"
+
+# Framing for compressed messages
+corncobs = { version = "0.1.3", features = ["std"] }

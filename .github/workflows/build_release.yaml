@@ -2,7 +2,7 @@ name: Cross platform build
 
 env:
   # bin name:final name,..
-  EXECUTABLE_NAMES: "main:gagbot,role_chihuahua:role_chihuahua"
+  EXECUTABLE_NAMES: "main:gagbot,role_chihuahua:role_chihuahua,migrate_and_vacuum"
 
 on:
   push:
