@@ -97,12 +97,14 @@ pub fn log(
             VALUES(?1, ?2, ?3)",
         )?;
         
-        let message_index_id = stmt.execute(params![
+        let message_index_id = stmt.insert(params![
             message_id,
             &timestamp.to_rfc3339(),
             type_,
         ])?;
             
+        debug!(message_index_id, "message_index inserted");
+
         if let Some(message) = message {
             let json = serde_json::to_value(message)?;
             
@@ -367,7 +369,7 @@ pub fn get_compression_state(
 ) -> Result<CompressionState, Error> {
     let (uncompressed_messages, uncompressed_bytes): (u64, u64)  = {
         let mut count_stmt = db.prepare(
-            "SELECT count(1), sum(length(message_json)) FROM message_chunk_temp",
+            "SELECT count(1), COALESCE(sum(length(message_json)), 0) FROM message_chunk_temp",
         )?;
         count_stmt.query_row((), 
         |r| Ok((
@@ -385,7 +387,7 @@ pub fn get_compression_state(
 
     let (compressed_bytes, chunks): (u64, u64)  = {
         let mut count_stmt = db.prepare(
-            "SELECT sum(length(data)), count(1) FROM message_chunk",
+            "SELECT COALESCE(sum(length(data)),0), count(1) FROM message_chunk",
         )?;
         count_stmt.query_row((), 
         |r| Ok((
@@ -412,7 +414,7 @@ pub fn compress(
 ) -> Result<bool, Error> {
     let (uncompressed_size, start_message_index_id): (u64, u64)  = {
         let mut count_stmt = db.prepare_cached(
-            "SELECT sum(length(message_json)), min(message_index_id) FROM message_chunk_temp",
+            "SELECT COALESCE(sum(length(message_json)), 0), min(message_index_id) FROM message_chunk_temp",
         )?;
         count_stmt.query_row((), 
         |r| Ok((

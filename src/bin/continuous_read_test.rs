@@ -51,45 +51,11 @@ async fn main() -> Result<(), Error> {
 
     let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
     
-    let mut did_work = false;
-    while compress(&mut sqlite_con)? {
-        did_work = true;
+    loop {
+        let cs = message_log::get_compression_state(&sqlite_con)?;
+        info!("{}", cs.uncompressed_messages);
     }
 
-    {
-        let _span = span!(Level::INFO, "Verifying compressed chunks").entered();
-        verify_compressed_chunks(&sqlite_con)?;
-    }
-    // (message_id, log entry count, log entry with payload count)
-    let test_data = [
-        (1222229448384839702, 1, 1), // Chunk temp
-        (1209103072832266270_u64, 8_usize, 8), // 1 chunk
-        (1122243681722826853, 13, 13), // 2 chunks
-        (1166501709405769798, 6, 6), // 3 chunks
-        (1222104462550630453, 2, 1), // 1 chunk
-    ];
-
-    {
-        let _span = span!(Level::INFO, "Verifying message logs").entered();
-        for (id, count, count_body) in test_data.into_iter() {
-            let log = message_log::get(&sqlite_con, id.into())?;
-            if log.len() != count {
-                error!(found=log.len(), expected=count, message_id=id, "Got the wrong number of log entries for message")
-            }
-
-            let actual_count = log
-                .iter()
-                .filter(|m| m.message.is_some()) 
-                .count();
-            if actual_count != count_body {
-                error!(count_body, actual_count, "Unexpected message body count for message_id {id}");
-            }
-        }
-    }
-
-    if did_work {
-        vacuum_database(&sqlite_con)?;
-    }
     close_database(sqlite_con)?;
 
     Ok(())
