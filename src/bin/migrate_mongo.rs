@@ -162,7 +162,7 @@ async fn main() -> Result<(), Error> {
     let args = Cli::parse();
     debug!("Parsed args: {:#?}", args);
 
-    let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let mut sqlite_con = open_database(&args.sqlite_connection_string, true, true)?;
 
     let mongo_client = {
         let mut client_options = ClientOptions::parse(args.mongo_db_uri).await?;

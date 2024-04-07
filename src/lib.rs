@@ -1,4 +1,4 @@
-use std::{ffi::c_int, fmt::Debug, path::PathBuf, time::{Duration, Instant}};
+use std::{ffi::c_int, fmt::Debug, path::PathBuf, sync::Once, time::{Duration, Instant}};
 
 use db::{
     queries::config::{ConfigKey, LogChannel},
@@ -540,13 +540,22 @@ fn sqlite_connection_profiling_callback(query: &str, duration: Duration) {
     trace!(target: "sqlite_profiling", ?duration, query);
 }
 
+pub fn get_migrations() -> Result<Migrations<'static>, Error> {
+    Ok(Migrations::from_directory(&MIGRATIONS_DIR)?)
+}
+
 
 #[instrument]
-pub fn open_database(connection_string: &str, create: bool) -> Result<Connection, Error> {
+pub fn open_database(connection_string: &str, create: bool, run_migrations: bool) -> Result<Connection, Error> {
     // Configure the tracing callback before opening the database
-    unsafe {
-        rusqlite::trace::config_log(Some(sqlite_tracing_callback))?;
-    }
+    static CONFIG_LOG: Once = Once::new();
+    let mut config_result = Ok(());
+    CONFIG_LOG.call_once(|| {
+        unsafe {
+            config_result = rusqlite::trace::config_log(Some(sqlite_tracing_callback));
+        }
+    });
+    config_result?;
 
     let mut open_flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_URI
@@ -559,12 +568,14 @@ pub fn open_database(connection_string: &str, create: bool) -> Result<Connection
     let mut con = Connection::open_with_flags(connection_string, open_flags)?;
     con.profile(Some(sqlite_connection_profiling_callback));
 
-    let migrations = Migrations::from_directory(&MIGRATIONS_DIR)?;
-    migrations.to_latest(&mut con)?;
-
     con.pragma_update(None, "journal_mode", "WAL")?;
     con.pragma_update(None, "synchronous", "NORMAL")?;
     con.pragma_update(None, "foreign_keys", "ON")?;
+    
+    if run_migrations {
+        let migrations = get_migrations()?;
+        migrations.to_latest(&mut con)?;
+    }
 
     debug!("Checking DB is writable");
     con.transaction_with_behavior(TransactionBehavior::Exclusive)?;

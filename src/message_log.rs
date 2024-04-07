@@ -72,19 +72,19 @@ pub fn log(
 ) -> Result<(), Error> {
     // TODO: This is kinda magic behaviour
     if type_ == LogType::Delete {
-        if db
-            .prepare_cached(
+        // Only log 1 delete, there's some funkyness around bulk deletes
+        if db.prepare_cached(
                 "SELECT 1 FROM message_log
-            WHERE guild_id = ?1 AND channel_id = ?2 AND message_id = ?3 AND type IN (?4, ?5)
-            LIMIT 1",
+                WHERE message_id = ?1 AND type IN (?2, ?3)
+                LIMIT 1",
+            )?.exists(params![message_id, LogType::Delete, LogType::Purge])?
+        // Only log if it was created or edited
+        || !db.prepare_cached(
+                "SELECT 1 FROM message_log
+                WHERE message_id = ?1 AND type IN (?2, ?3)
+                LIMIT 1"
             )?
-            .exists(params![
-                guild_id,
-                channel_id,
-                message_id,
-                LogType::Delete,
-                LogType::Purge
-            ])?
+            .exists(params![message_id, LogType::Create, LogType::Edit])?
         {
             return Ok(());
         }

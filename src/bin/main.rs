@@ -2,7 +2,7 @@
 //
 // "prune", "Kick inactive users", "gagbot:admin:prune"
 
-use std::{fmt::{Write, Display}, num::ParseIntError, time::Duration};
+use std::{fmt::{Display, Write}, num::{NonZeroUsize, ParseIntError}, thread::sleep, time::Duration};
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -28,6 +28,7 @@ use poise::{
     },
     FrameworkContext, FrameworkError,
 };
+use rusqlite_migration::SchemaVersion;
 use tokio::{
     sync::oneshot::Sender, time
 };
@@ -58,6 +59,52 @@ struct Cli {
     background_task_frequency_seconds: u64,
 }
 
+fn run_migrations(connection_string: &str) -> Result<(), Error> {
+    // Let the main bot get up and to steady state before we start fiddling with the DB
+    sleep(Duration::from_secs(30));
+    
+    let mut db = open_database(connection_string, false, false)?;    
+    
+    let migrations = get_migrations()?;
+    let sleep_duration = Duration::from_secs(3);
+    
+    loop {
+        let current_version = migrations.current_version(&db)?;
+        info!("Current migration version: {}", current_version);
+        
+        if let SchemaVersion::Inside(n) = current_version {
+            let eight = NonZeroUsize::new(8).unwrap();
+            
+            let target_version = if n < eight {
+                Some(8)
+            } else if n == eight {
+                Some(9)
+            } else {
+                Some(usize::MAX)
+            };
+
+            if let Some(version) = target_version {
+                let _span = span!(Level::INFO, "Migrating to version").entered();
+                info!("Version: {version}");
+                
+                if version == usize::MAX {
+                    migrations.to_latest(&mut db)?;
+                    break;
+                } else {
+                    migrations.to_version(&mut db, version)?;
+                }
+            }
+        } else {
+            error!("Current version isn't 'Inside' known migrations");
+            break;
+        }
+
+        sleep(sleep_duration);
+    }
+
+    Ok(())
+}
+
 // This simulates a single core vm: #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -69,9 +116,20 @@ async fn main() -> Result<(), Error> {
     let discord_token = &args.discord_token;
     debug!("Parsed args: {:#?}", args);
 
+    let connection_string = args.sqlite_connection_string.clone();
+    // Launch the background task to patch up the data
+    tokio::task::spawn_blocking(move || {
+        match run_migrations(&connection_string) {
+            Ok(()) => info!("run_migrations background task completed successfully"),
+            Err(e) => error!("run_migrations background task error: {}", e),
+        }
+    });
+
     // Open the DB before launching the task so we can fail before trying to connect
     // to discord
-    let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let mut sqlite_con = open_database(&args.sqlite_connection_string, false, false)?;
+    // Bump up the busy timeout while migrations are happening
+    sqlite_con.busy_timeout(Duration::from_secs(120))?;
     let db_file_path = sqlite_con.path().map(|p| p.to_owned());
     let (sender, receiver) = flume::bounded::<DbCommand>(args.database_command_channel_bound);
 
@@ -561,6 +619,11 @@ async fn handle_guild_create<'a>(
 }
 
 async fn handle_message_create(data: &BotData, new_message: &Message) -> Result<(), Error> {
+    // Don't log bot messages
+    if new_message.author.bot {
+        return Ok(());
+    }
+
     Ok(if let Some(guild_id) = new_message.guild_id {
         let user_id = new_message.author.id;
 
@@ -807,6 +870,12 @@ async fn handle_message_update(
     old_if_available: &Option<Message>,
     new: &Option<Message>,
 ) -> Result<(), Error> {
+    if let Some(message) = new {
+        // Don't log bot messages
+        if message.author.bot {
+            return Ok(());
+        }
+    }
     Ok(
         if let (Some(guild_id), Some(old), Some(new)) = (event.guild_id, old_if_available, new) {
             let user = &old.author;
