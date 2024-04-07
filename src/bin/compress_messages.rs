@@ -50,7 +50,7 @@ async fn main() -> Result<(), Error> {
     let args = Cli::parse();
     debug!("Parsed args: {:#?}", args);
 
-    let mut sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let mut sqlite_con = open_database(&args.sqlite_connection_string, true, false)?;
     
     let mut n = 0;
     while compress(&mut sqlite_con)? {

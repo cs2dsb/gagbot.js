@@ -64,7 +64,7 @@ async fn main() -> Result<(), Error> {
 
     // Open the DB before launching the task so we can fail before trying to connect
     // to discord
-    let sqlite_con = open_database(&args.sqlite_connection_string, true)?;
+    let sqlite_con = open_database(&args.sqlite_connection_string, true, true)?;
     let db_file_path = sqlite_con.path().map(|p| p.to_owned());
     let (sender, receiver) = flume::bounded::<DbCommand>(args.database_command_channel_bound);
 

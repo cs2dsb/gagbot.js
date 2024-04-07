@@ -16,6 +16,10 @@ static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
 const MESSAGE_LOG_CHUNK_SIZE: u64 = 1024 * 100;
 const COMPRESSION_LEVEL: i32 = zstd::DEFAULT_COMPRESSION_LEVEL;
 
+pub fn get_migrations() -> Result<Migrations<'static>, Error> {
+    Ok(Migrations::from_directory(&MIGRATIONS_DIR)?)
+}
+
 fn sqlite_tracing_callback(sqlite_code: c_int, msg: &str) {
     use rusqlite::ffi;
     let err_code = ffi::Error::new(sqlite_code);
@@ -34,7 +38,7 @@ fn sqlite_connection_profiling_callback(query: &str, duration: Duration) {
 
 
 #[instrument]
-pub fn open_database(connection_string: &str, create: bool) -> Result<Connection, Error> {
+pub fn open_database(connection_string: &str, create: bool, run_migrations: bool) -> Result<Connection, Error> {
     // Configure the tracing callback before opening the database
     static CONFIG_LOG: Once = Once::new();
     let mut config_result = Ok(());
@@ -56,10 +60,12 @@ pub fn open_database(connection_string: &str, create: bool) -> Result<Connection
     let mut con = Connection::open_with_flags(connection_string, open_flags)?;
     con.profile(Some(sqlite_connection_profiling_callback));
 
-    let migrations = Migrations::from_directory(&MIGRATIONS_DIR)?;
-    {
-        let _span = span!(Level::INFO, "Running migrations").entered();
-        migrations.to_latest(&mut con)?;
+    if run_migrations {
+        let migrations = get_migrations()?;
+        { 
+            let _span = span!(Level::INFO, "Running migrations").entered();
+            migrations.to_latest(&mut con)?;
+        }
     }
 
     con.pragma_update(None, "journal_mode", "WAL")?;
