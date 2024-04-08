@@ -21,3 +21,6 @@ WHERE
 	AND message_log.message_json IS NOT NULL;
 	
 DROP TABLE max_message_index_id;
+
+-- Now that everything is copied over we can delete the old table
+DROP TABLE message_log;
