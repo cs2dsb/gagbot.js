@@ -414,7 +414,7 @@ pub fn compress(
 ) -> Result<bool, Error> {
     let (uncompressed_size, start_message_index_id): (u64, u64)  = {
         let mut count_stmt = db.prepare_cached(
-            "SELECT COALESCE(sum(length(message_json)), 0), min(message_index_id) FROM message_chunk_temp",
+            "SELECT COALESCE(sum(length(message_json)), 0), COALESCE(min(message_index_id), 0) FROM message_chunk_temp",
         )?;
         count_stmt.query_row((), 
         |r| Ok((

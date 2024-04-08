@@ -1,5 +1,5 @@
 #![allow(unused_imports, dead_code)]
-use std::{io::Cursor, num::ParseIntError, path::Path, time::Duration};
+use std::{io::Cursor, num::ParseIntError, path::Path, time::{Duration, Instant}};
 
 use clap::Parser;
 use futures::future::{select, Either};
@@ -50,15 +50,21 @@ async fn main() -> Result<(), Error> {
     let args = Cli::parse();
     debug!("Parsed args: {:#?}", args);
 
-    let mut sqlite_con = open_database(&args.sqlite_connection_string, true, false)?;
+    let mut sqlite_con = open_database(&args.sqlite_connection_string, false, false)?;
     
     let mut n = 0;
+    let start = Instant::now();
+
     while compress(&mut sqlite_con)? {
-        sleep(Duration::from_secs(3)).await;
+        // We don't actually need to sleep to make time for the main bot to do work because
+        // during the CPU bound compression work we aren't holding any transactions
+        //sleep(Duration::from_micros(200)).await;
         n += 1;
         if n % 10 == 1 {
             let cs = message_log::get_compression_state(&sqlite_con)?;
-            info!("{:#?}", cs);
+            info!("Chunks per second: {}\n{:#?}", 
+                n as f32 / start.elapsed().as_secs_f32(),
+                cs);
         }
     }
 
