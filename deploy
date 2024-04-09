@@ -33,6 +33,7 @@ read -r -p "About to create and push tag \"${tag}\" with annotation \"${tag_mess
 response=${response,,}    # tolower
 if [[ "$response" =~ ^(yes|y|)$ ]]; then
     git tag -a "${tag}" -m "${tag_message}"
+    git push origin main
     git push origin "tags/${tag}"
 else 
     echo "Aborted"
