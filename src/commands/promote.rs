@@ -113,7 +113,7 @@ where
 
             let mut promoted = false;
             let is_full = m.roles.contains(&full_role.id);
-            let is_new = m.roles.contains(&new_role.id);
+            let mut is_new = m.roles.contains(&new_role.id);
             let mut is_junior = m.roles.contains(&junior_role.id);
 
             let mut skip_checks = if let Some(fum) = force_upgrade_member.as_ref() {
@@ -123,6 +123,30 @@ where
             };
 
             if is_full && !is_junior && !is_new {
+                continue;
+            }
+
+            if is_new && is_junior {
+                progress_chan
+                    .send_async(format!("Removing superfluous {} from {}", new_role.name, m))
+                    .await?;
+
+                m.remove_role(ctx, new_role.id)
+                    .await
+                    .context("Removing new role")?;
+
+                is_new = false;
+            }
+
+            if is_junior && is_full {
+                progress_chan
+                    .send_async(format!("Removing superfluous {} from {}", junior_role.name, m))
+                    .await?;
+
+                m.remove_role(ctx, junior_role.id)
+                    .await
+                    .context("Removing junior role")?;
+
                 continue;
             }
 
