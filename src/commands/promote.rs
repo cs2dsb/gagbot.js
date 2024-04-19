@@ -1,10 +1,8 @@
-use std::{
-    fmt::{self, Debug},
-};
+use std::fmt::{self, Debug};
 
 use chrono::{Days, Utc};
 use poise::serenity_prelude::{Cache, CacheHttp,  Http, Member};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{
     get_config_role, get_config_chan, get_config_u64,
@@ -90,10 +88,14 @@ where
             "Junior and Full roles cannot be the same! ({:?})",
             junior_role
         );
-        ensure!(
-            guild.member_count as usize == guild.members.len(),
-            "Member count and number of members in cache differ"
-        );
+
+        // ensure!(
+        //     guild.member_count as usize == guild.members.len(),
+        //     "Member count and number of members in cache differ"
+        // );
+        if guild.member_count as usize != guild.members.len() {
+            warn!(guild_memeber_count=guild.member_count, guild_members_len=guild.members.len(), "Member count and number of members in cache differ");
+        }
 
         // Fetch the members
         // TODO: The cache is primed when joining the guild and maintained by
